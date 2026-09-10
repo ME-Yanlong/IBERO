@@ -8,8 +8,10 @@ from pathlib import Path
 from summarize_milling_stage import case_passed, metrics, read
 
 
-def summarize(paths):
-    levels = (("base", 0.001), ("medium", 0.00075), ("fine", 0.0005))
+def summarize(paths, *, medium_cell=0.00075):
+    if medium_cell not in {0.00075, 0.002 / 3}:
+        raise ValueError("Use a declared grid supplement, not an arbitrary replacement")
+    levels = (("base", 0.001), ("medium", medium_cell), ("fine", 0.0005))
     shapes = ("slot", "pocket", "through_hole")
     raw, checks = {}, {}
     for label, _ in levels:
@@ -89,6 +91,9 @@ def summarize(paths):
                 )
     return dict(
         scope="three_resolution_physical_fixture_supplement_not_robot_or_calibration",
+        grid_set="original075"
+        if medium_cell == 0.00075
+        else "additional_depth_aligned0667",
         source_hash=source,
         passed=all(checks.values()),
         checks=checks,
@@ -103,10 +108,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("base", "medium", "fine", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument(
+        "--grid-set", choices=["original075", "additional0667"], default="original075"
+    )
     args = parser.parse_args()
     if args.output.exists():
         parser.error("Refusing to replace existing evidence")
-    result = summarize({k: v for k, v in vars(args).items() if k != "output"})
+    result = summarize(
+        {k: getattr(args, k) for k in ("base", "medium", "fine")},
+        medium_cell=0.00075 if args.grid_set == "original075" else 0.002 / 3,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(result, indent=2, allow_nan=False), encoding="utf-8"
