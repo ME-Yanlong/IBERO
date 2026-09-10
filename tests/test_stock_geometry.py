@@ -83,6 +83,13 @@ def test_query_extreme_points_and_empty_multidimensional_ids_are_bounded():
         stock.validate_event(replace(event, removed_ids=(10**100,)))
 
 
+def test_pose_rotation_cache_is_immutable():
+    pose = ToolPose((0, 0, 0))
+    assert pose.rotation is pose.rotation
+    with pytest.raises(ValueError):
+        pose.rotation[0, 0] = 2
+
+
 def test_cylinder_shank_does_not_cut_and_fast_path_has_no_gap():
     tool = EndMillGeometry(0.004, 0.004, 0.01, 0.02)
     pose = ToolPose((0, 0, 0))

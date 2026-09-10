@@ -7,9 +7,8 @@ import numpy as np
 from ibero.processes.tools import ToolPose, swept_cells
 from ibero.materials.parameters import finite_number
 from ibero.processes.implicit_wrench import ImplicitWrenchCoupling
+from ibero.processes.prepared_milling_wrench import PreparedMillingWrench
 from ibero.processes.milling_forces import (
-    mean_side_wrench,
-    mean_face_wrench,
     capacity_reason,
 )
 
@@ -65,6 +64,8 @@ class MillingProcess:
         self.tool_body = model.body(tool_body).id
         self.tip_site = model.site(tool_tip_site).id
         self.blade_geom = model.geom(blade_geom).id
+        self.blade_body = int(model.geom_bodyid[self.blade_geom])
+        self._blade_body_geoms = np.flatnonzero(model.geom_bodyid == self.blade_body)
         self.spindle_joint = model.joint(spindle_joint).id
         self.stock_body = model.body("machining_stock").id
         if not np.all(binding._initial_type == 8) or not np.all(
@@ -95,8 +96,20 @@ class MillingProcess:
     def reset(self):
         self.invalid_reason = None
         self.sequence = 0
-        self.model.geom_contype[self.blade_geom] = 1
         self.model.geom_conaffinity[self.blade_geom] = 1
+        self.set_collision_mode(1)
+
+    def set_collision_mode(self, value):
+        """同步几何与刚体粗筛位掩码；只缓存真实 OR，不关闭刀柄或其他实体。"""
+        if type(value) is not int or value not in (1, 2):
+            raise ValueError("Unsupported milling collision mode")
+        self.model.geom_contype[self.blade_geom] = value
+        self.model.body_contype[self.blade_body] = np.bitwise_or.reduce(
+            self.model.geom_contype[self._blade_body_geoms]
+        )
+        self.model.body_conaffinity[self.blade_body] = np.bitwise_or.reduce(
+            self.model.geom_conaffinity[self._blade_body_geoms]
+        )
 
     def kinematics(self, data):
         rotation = data.site_xmat[self.tip_site].reshape(3, 3)
@@ -180,8 +193,9 @@ class MillingProcess:
             raise RuntimeError("Invalid machining episode must be reset")
         self.binding.ensure_consistent()
         pose, velocity, angular_velocity, rpm = self.kinematics(data)
+        rotation = pose.rotation
         dt = self.model.opt.timestep
-        local_velocity = pose.rotation.T @ velocity
+        local_velocity = rotation.T @ velocity
         zero = np.zeros(3)
         evaluated_velocity = velocity.copy()
         evaluated_rpm = rpm
@@ -195,13 +209,7 @@ class MillingProcess:
                 tuple(float(v) for v in force),
                 tuple(float(v) for v in torque),
                 tuple(pose.position),
-                abs(
-                    float(pose.rotation[:, 2] @ torque)
-                    * evaluated_rpm
-                    * 2
-                    * math.pi
-                    / 60
-                ),
+                abs(float(rotation[:, 2] @ torque) * evaluated_rpm * 2 * math.pi / 60),
                 volume,
                 self.stock.version,
                 depth,
@@ -212,14 +220,14 @@ class MillingProcess:
 
         if rpm < self.limits.min_rpm:
             # 不到可切转速：实体刀具仍可碰撞/受阻，没有清料授权。
-            self.model.geom_contype[self.blade_geom] = 1
+            self.set_collision_mode(1)
             return state("solid_contact")
         reason = None
         if rpm > self.limits.max_rpm:
             reason = "spindle_out_of_range"
         elif (
             np.linalg.norm(angular_velocity) > 1e-3
-            or abs(pose.rotation[:, 2] @ self.stock.rotation[:, 2] - 1) > 1e-6
+            or abs(rotation[:, 2] @ self.stock.rotation[:, 2] - 1) > 1e-6
         ):
             reason = "only_fixed_axis_three_axis_milling_supported"
         elif np.linalg.norm(velocity) * dt > self.stock.cell_size_m / 4:
@@ -228,39 +236,34 @@ class MillingProcess:
             self.invalid_reason = reason
             return state("invalid", reason)
         lengths, centroids, fraction, pending = self._engagement(pose, velocity)
-
-        def wrench_at(u):
-            v = pose.rotation.T @ u[:3]
-            rev = float(u[3] * 30 / np.pi)
-            f, t = mean_side_wrench(
+        prepared = (
+            PreparedMillingWrench(
                 self.coefficients,
                 radius_m=self.tool.radius_m,
-                rpm=rev,
                 teeth=self.limits.teeth,
-                velocity_tool=v,
-                axial_lengths_m=lengths,
-                axial_centroids_m=centroids,
+                lengths_m=lengths,
+                centroids_m=centroids,
+                face_fraction=fraction,
                 edge_transition_chip_m=self.edge_transition_chip_m,
+                center_cutting=self.limits.center_cutting,
             )
-            if v[2] < -1e-12 and fraction > 0:
-                if not self.limits.center_cutting:
-                    raise ValueError("center_cutting_not_supported")
-                ff, tf = mean_face_wrench(
-                    self.coefficients,
-                    radius_m=self.tool.radius_m,
-                    rpm=rev,
-                    teeth=self.limits.teeth,
-                    axial_velocity_m_s=v[2],
-                    engagement_fraction=fraction,
-                )
-                f += ff
-                t += tf
-            return np.r_[pose.rotation @ f, pose.rotation @ t]
+            if pending
+            else None
+        )
+
+        def wrench_at(u):
+            v = rotation.T @ u[:3]
+            rev = float(u[3] * 30 / np.pi)
+            tool_wrench = prepared(v, rev)
+            world_wrench = np.empty(6)
+            world_wrench[:3] = rotation @ tool_wrench[:3]
+            world_wrench[3:] = rotation @ tool_wrench[3:]
+            return world_wrench
 
         previous_type = int(self.model.geom_contype[self.blade_geom])
         if pending:
             # 预测只在独立 data；临时工作面位掩码在 finally 恢复，尚未提交材料。
-            self.model.geom_contype[self.blade_geom] = 2
+            self.set_collision_mode(2)
             try:
                 wrench, response, coupling_residual = self.coupling.solve(
                     data,
@@ -271,16 +274,16 @@ class MillingProcess:
                 )
                 evaluated_velocity = response[:3]
                 evaluated_rpm = float(response[3] * 30 / np.pi)
-                local_velocity = pose.rotation.T @ evaluated_velocity
+                local_velocity = rotation.T @ evaluated_velocity
             except (ValueError, np.linalg.LinAlgError) as error:
                 self.invalid_reason = str(error)
                 return state("invalid", self.invalid_reason)
             finally:
-                self.model.geom_contype[self.blade_geom] = previous_type
+                self.set_collision_mode(previous_type)
             world_force, world_torque = wrench[:3], wrench[3:]
             force, torque = (
-                pose.rotation.T @ world_force,
-                pose.rotation.T @ world_torque,
+                rotation.T @ world_force,
+                rotation.T @ world_torque,
             )
         else:
             world_force, world_torque = zero.copy(), zero.copy()
@@ -300,7 +303,7 @@ class MillingProcess:
         if reason:
             # 失败保留当前物理态/材料，拒绝本子步积分，不以截断力换取继续穿行。
             self.invalid_reason = reason
-            self.model.geom_contype[self.blade_geom] = 1
+            self.set_collision_mode(1)
             mujoco.mj_forward(self.model, data)
             return state("invalid", reason, world_force, world_torque, depth=depth)
         predicted = ToolPose(
@@ -322,7 +325,7 @@ class MillingProcess:
         if len(actual) and np.linalg.norm(velocity) <= 1e-12:
             self.invalid_reason = "stationary_initial_overlap_unsupported"
             return state("invalid", self.invalid_reason)
-        self.model.geom_contype[self.blade_geom] = 2
+        self.set_collision_mode(2)
         volume = 0.0
         try:
             if len(actual):
@@ -330,7 +333,7 @@ class MillingProcess:
                 volume = self.binding.commit(event, data, fault_at=fault_at)
                 self.sequence += 1
         except Exception:
-            self.model.geom_contype[self.blade_geom] = previous_type
+            self.set_collision_mode(previous_type)
             mujoco.mj_forward(self.model, data)
             raise
         loads.add_wrench(data, self.tool_body, world_force, world_torque, pose.position)

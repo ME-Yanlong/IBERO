@@ -276,6 +276,7 @@ class MillingFixture:
         peak_force, peak_torque, peak_power, peak_shank_penetration = 0.0, 0.0, 0.0, 0.0
         housing = self.model.geom("mill_housing").id
         for _ in range(substeps):
+            load_evaluation_time = float(self.data.time)
             self.loads.begin(self.data)
             try:
                 state = self.process.advance(self.data, self.loads, fault_at=fault_at)
@@ -326,8 +327,16 @@ class MillingFixture:
                 self.process.invalid_reason = "numerical_instability"
                 break
         info = asdict(state)
+        actual_omega = float(self.data.joint("mill_spindle").qvel[0])
+        motor_torque = float(
+            self.data.actuator_force[self.model.actuator("mill_motor").id]
+        )
         info.update(
             time_s=float(self.data.time),
+            load_evaluation_time_s=load_evaluation_time,
+            actual_rpm=actual_omega * 30 / np.pi,
+            motor_torque_nm=motor_torque,
+            motor_mechanical_power_w=motor_torque * actual_omega,
             removed_volume_step_m3=total_removed,
             total_removed_volume_m3=self.stock.initial_volume_m3 - self.stock.volume_m3,
             tip_position_m=self.data.site("mill_tip").xpos.copy().tolist(),
@@ -335,6 +344,13 @@ class MillingFixture:
             fixture_reaction_force_n=(-np.asarray(state.force_world_n)).tolist(),
             fixture_reaction_torque_about_tip_nm=(
                 -np.asarray(state.torque_world_nm)
+            ).tolist(),
+            fixture_reaction_torque_about_stock_origin_nm=(
+                -np.asarray(state.torque_world_nm)
+                - np.cross(
+                    np.asarray(state.application_point_world_m) - self.stock.origin,
+                    np.asarray(state.force_world_n),
+                )
             ).tolist(),
             ft_force_n=self.data.sensor("mill_force").data.copy().tolist(),
             ft_torque_nm=self.data.sensor("mill_torque").data.copy().tolist(),

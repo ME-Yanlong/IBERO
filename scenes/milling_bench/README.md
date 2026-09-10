@@ -21,3 +21,38 @@ python scripts/verify_milling_process.py --shape all --workers 3
 ```
 
 当前网格 1 mm、物理上限 60000 格。该上限不是建议容量：初编译和隐式耦合仍有显著开销。一步内位移、主轴/力/功率或数值求解超限会确定地中止，不通过裁掉载荷后继续删除材料来掩盖问题。完整 G7 与后续 G1 加工状态以开发文档和冻结报告为准。
+
+## 参数如何变成力与孔
+
+毛坯是固定夹具中的材料，不是可自由运动的钢块。`density_kg_m3` 决定去除质量账目；固定夹具承担反力，不能通过改密度自动得到更硬的钢材。切削阻力来自单独声明的过程系数；它们必须有牌号、单位与 provisional 状态，不能由字符串 `steel` 自动推断。当前不模拟断下余料的自由运动。
+
+侧刃在刀尖坐标中取刀轴为 +Z，正主轴沿 +Z 转动。径向单位向量 `n=(cosφ,sinφ,0)`，每齿进给厚度 `h=max(v·n,0)/(rpm/60×齿数)`；φ 的零点是本实现的 +X，不直接混用其他资料的角度零点。沿每个角度查询剩余体素列，得到实际啮合刃长 `a(φ)`；每刃切向分量为 `a×(Ktc×h+Kte)`，径向、轴向分量分别使用自己的系数。对一周平均、乘齿数，并计算作用点关于刀尖的力矩。切屑厚度使用**实际运动速度**，不是 baseline 目标速度。
+
+上述形式参照 [UBC/MAL 机加工课程](https://www.malinc.com/wp-content/uploads/2015/06/MAL_Machining_Course.pdf) 的机械式切削模型；进给、转速、扭矩、功率的量纲可对照 [Sandvik 铣削公式](https://www.sandvik.coromant.com/en-gb/knowledge/machining-formulas-definitions/milling-formulas-definitions)。引用模型形式不代表这些示例系数已经获得材料实测支持。
+
+端面只在已声明 `center_cutting: true` 且实际向下进给时工作。以等面积圆盘查询端面剩余材料比例，并使用独立 `face_*` 系数沿径向积分轴向力和扭矩。这是平底中心刃的过程级近似，未表示真实横刃几何、局部崩刃或偏心接触瞬态。
+
+数值与材料参数不要混淆：
+
+- `cell_size_m` 是几何分辨率。用不超过一格的前视估计连续平均啮合，可能在离散边界前出现平均载荷；材料仍只按实际当前/下一物理步运动扫掠去除，不预先挖掉前视区域。
+- `edge_transition_chip_m` 当前 10 nm，仅平滑常数刃口项在零进给处的跳变，权重为 `h/(h+δ)`。它不是实测最小切屑厚度，不缩小剪切系数，也不截断过载力。解析参考保留 δ=0，并比较 10/5 nm。
+- 默认物理步长现为 100 μs；200 μs 曾出现混合刃区启停求解失败。采用更细步长仍需成组验证，不能靠动画播放速度说明稳定性。
+- `machine` 是台架自身的轴伺服刚度/阻尼/力限值。当前 50000 N/m、350 N·s/m、每轴 50 N；它不是 G1 的关节能力。普通 Python 诊断构造器仍保留显式的早期台架默认值，正式样例以加载后的完整菜谱和 manifest 为准。
+
+## 查看哪些审计值
+
+每帧既有物理时刻 `time_s`，也有最后一次载荷求值时刻 `load_evaluation_time_s`。`force_world_n`、`torque_world_nm` 为最后一次过程力及关于刀尖的力矩；`peak_*_step_*` 保存控制帧内逐物理子步峰值，不能只看最后一帧判断是否超限。
+
+`actual_rpm` 来自引擎关节速度；`spindle_power_w` 是模型切削功率，`motor_mechanical_power_w` 是执行器实际机械功率，不是电功率。加减速时二者不必相等，转子惯性会储存/释放能量。`ft_force_n`、`ft_torque_nm` 为安装座传感器坐标中的读数；不能直接与世界系力逐轴比较，需要旋转和力矩臂换算。夹具反作用同时按刀尖和工件原点列出，避免换了参考点却沿用原力矩。
+
+轨迹 v2 同时保存材料事件和刃区接触模式；从原始、中间、最终帧回看都不允许继续积分。更换源码、工具、过程系数、步长或场景后，旧文件按身份校验拒绝；不是自动兼容或可恢复训练 checkpoint。
+
+独立数值覆盖会写入新的证据目录，不改原菜谱，例如：
+
+```powershell
+python scripts/verify_milling_process.py --shape slot --timestep-s 0.00005
+python scripts/verify_milling_process.py --shape slot --edge-transition-chip-m 5e-9
+python scripts/verify_milling_loads.py
+```
+
+最后一个入口覆盖合成平均力、非零力臂、旋转 F/T、纯力矩、反作用平衡及边界测试；即使通过，也不等于三个实际加工形状或机器人任务已通过。

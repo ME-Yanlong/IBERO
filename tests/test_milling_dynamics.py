@@ -304,3 +304,20 @@ def test_invalid_commands_and_trace_frames_are_rejected_before_mutation():
     for seed in (True, -1, 2**32):
         with pytest.raises(ValueError):
             e.reset(seed=seed)
+
+
+def test_body_filter_cache_matches_geom_mask_without_changing_contact_result():
+    e = fixture(start=(0.006, 0, -0.012))
+    e.process.set_collision_mode(2)
+    mujoco.mj_forward(e.model, e.data)
+    cached_pairs = [(int(c.geom1), int(c.geom2), float(c.dist)) for c in e.data.contact]
+    e.model.body_contype[e.process.blade_body] = (
+        1  # 模拟旧代码保守粗筛；窄筛仍使用刃区 type=2。
+    )
+    mujoco.mj_forward(e.model, e.data)
+    stale_pairs = [(int(c.geom1), int(c.geom2), float(c.dist)) for c in e.data.contact]
+    assert cached_pairs == stale_pairs and cached_pairs
+    e.process.set_collision_mode(2)
+    assert e.model.body_contype[e.process.blade_body] == 2
+    e.process.set_collision_mode(1)
+    assert e.model.body_contype[e.process.blade_body] == 1

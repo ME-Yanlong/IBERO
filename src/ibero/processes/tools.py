@@ -1,6 +1,7 @@
 """端铣刀有效刃区扫掠：平底圆柱，刀柄不参与材料删除。"""
 
 from dataclasses import dataclass
+from functools import cached_property
 import math
 import numpy as np
 from ibero.materials.parameters import finite_number
@@ -37,9 +38,12 @@ class ToolPose:
         object.__setattr__(self, "position", tuple(float(x) for x in p))
         object.__setattr__(self, "quaternion", tuple(float(x) for x in self.quaternion))
 
-    @property
+    @cached_property
     def rotation(self):
-        return quaternion_matrix(self.quaternion)
+        # 位姿不可变，旋转基也只计算一次；只读数组避免消费者改变后续扫掠结果。
+        result = quaternion_matrix(self.quaternion)
+        result.setflags(write=False)
+        return result
 
 
 @dataclass(frozen=True)

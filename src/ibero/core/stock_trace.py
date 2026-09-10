@@ -77,10 +77,8 @@ class StockTrace:
             self.env.model, self.env.data, self.states[index], Trace.spec
         )
         if mode:
-            self.env.model.geom_contype[self.env.process.blade_geom] = mode[
-                "milling_blade_contype"
-            ]
             self.env.model.geom_conaffinity[self.env.process.blade_geom] = 1
+            self.env.process.set_collision_mode(mode["milling_blade_contype"])
         mujoco.mj_forward(self.env.model, self.env.data)
         self.env._replay_restored = True
         return dict(

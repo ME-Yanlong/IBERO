@@ -137,3 +137,51 @@ def test_numerical_edge_transition_is_explicit_small_and_continuous(coefficients
         )
         forces.append(np.linalg.norm(f))
     assert forces[-1] == 0 and all(a > b for a, b in zip(forces, forces[1:]))
+
+
+def test_prepared_kernel_matches_unoptimized_reference(coefficients):
+    from ibero.processes.prepared_milling_wrench import PreparedMillingWrench
+
+    rng = np.random.default_rng(41)
+    lengths = rng.uniform(0, 0.003, 128)
+    centroids = rng.uniform(0.001, 0.009, 128)
+    for delta in (0.0, 1e-8):
+        kernel = PreparedMillingWrench(
+            coefficients,
+            radius_m=0.004,
+            teeth=2,
+            lengths_m=lengths,
+            centroids_m=centroids,
+            face_fraction=0.6,
+            edge_transition_chip_m=delta,
+            center_cutting=True,
+        )
+        for velocity in (
+            [0.001, 0, 0],
+            [0.0002, -0.0004, -0.0002],
+            [0, 0, -0.0001],
+            [0, 0, 0],
+            [1e-10, -2e-10, 1e-10],
+        ):
+            for rpm in (0, 3000, 6000):
+                f, t = mean_side_wrench(
+                    coefficients,
+                    radius_m=0.004,
+                    rpm=rpm,
+                    teeth=2,
+                    velocity_tool=velocity,
+                    axial_lengths_m=lengths,
+                    axial_centroids_m=centroids,
+                    edge_transition_chip_m=delta,
+                )
+                ff, tt = mean_face_wrench(
+                    coefficients,
+                    radius_m=0.004,
+                    rpm=rpm,
+                    teeth=2,
+                    axial_velocity_m_s=velocity[2],
+                    engagement_fraction=0.6,
+                )
+                np.testing.assert_allclose(
+                    kernel(velocity, rpm), np.r_[f + ff, t + tt], atol=1e-12, rtol=1e-12
+                )
