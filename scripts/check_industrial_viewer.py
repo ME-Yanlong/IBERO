@@ -18,22 +18,34 @@ def main():
         help="also require two complete successful episodes",
     )
     parser.add_argument(
-        "--scene", choices=["latch_release", "harness_unplug"], default="latch_release"
+        "--scene",
+        choices=["latch_release", "harness_unplug", "plate_milling"],
+        default="latch_release",
     )
     args = parser.parse_args()
     out = Path("artifacts/industrial_core01/latch/viewer") / datetime.now(
         timezone.utc
     ).strftime("%Y%m%dT%H%M%S%fZ")
     out.mkdir(parents=True, exist_ok=False)
-    if args.scene == "harness_unplug":
+    if args.scene == "plate_milling":
+        from ibero.envs.plate_milling import PlateMillingEnv
+        from ibero.milling_review import MillingReviewer
+
+        env = PlateMillingEnv()
+        reviewer = MillingReviewer
+        env.control_dt = 1 / env.scene.config["physics"]["control_hz"]
+        env.max_episode_steps = round(
+            env.scene.constraints["task"]["max_seconds"] / env.control_dt
+        )
+    elif args.scene == "harness_unplug":
         from ibero.envs.harness_unplug import HarnessUnplugEnv
 
         env = HarnessUnplugEnv()
+        reviewer = IndustrialReviewer
     else:
         env = LatchReleaseEnv()
-    app = IndustrialReviewer(
-        env, seed=0, steps=env.max_episode_steps if args.full else 20
-    )
+        reviewer = IndustrialReviewer
+    app = reviewer(env, seed=0, steps=env.max_episode_steps if args.full else 20)
     report = {
         "initial_wait": False,
         "pause": False,
@@ -134,7 +146,8 @@ def main():
 
     app.root.after(200, check)
     app.run()
-    env.close()
+    if hasattr(env, "close"):
+        env.close()
     report["passed"] = all(report.values()) and "error" not in report
     report["source_hash"] = simulation_source_hash()
     report["scene"] = args.scene

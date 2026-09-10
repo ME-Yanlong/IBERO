@@ -85,8 +85,9 @@ def test_plate_config_rejects_fake_gravity_and_unbounded_axis_approximation():
 
 
 def test_task_cannot_succeed_for_solid_stock_or_spinning_tool(env):
-    for shape in ("slot", "pocket", "through_hole"):
-        assert not env.evaluate_task(bench_target(shape))["result"]["success"]
+    assert not env.evaluate_task(env.target)["result"]["success"]
+    with pytest.raises(ValueError, match="declared"):
+        env.evaluate_task(bench_target("slot"))
 
 
 def test_robot_trace_reset_seed_and_readonly_replay(env, tmp_path):

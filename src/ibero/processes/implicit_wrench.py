@@ -17,6 +17,11 @@ class ImplicitWrenchCoupling:
         self.body, self.site, self.spindle_dof = tool_body, tip_site, spindle_dof
         self.scratch = mujoco.MjData(model)
         self.last_diagnostics = {}
+        self.last_wrench = np.zeros(6)
+
+    def reset(self):
+        self.last_diagnostics = {}
+        self.last_wrench.fill(0)
 
     def _trial(self, data, base_generalized, base_body, point, wrench):
         m, d = self.model, self.scratch
@@ -38,14 +43,20 @@ class ImplicitWrenchCoupling:
 
     def solve(self, data, base_generalized, base_body, point, wrench_at_velocity):
         self.last_diagnostics = {}
-        free = self._trial(data, base_generalized, base_body, point, np.zeros(6))
+        # 前一步载荷只是线性化中心；本步仍重新测量六方向响应并独立复验。
+        anchor = self.last_wrench.copy()
+        anchored_response = self._trial(
+            data, base_generalized, base_body, point, anchor
+        )
         compliance = np.empty((4, 6))
         for i in range(6):
             basis = np.zeros(6)
-            basis[i] = 1
+            basis[i] = 0.01
             compliance[:, i] = (
-                self._trial(data, base_generalized, base_body, point, basis) - free
-            )
+                self._trial(data, base_generalized, base_body, point, anchor + basis)
+                - anchored_response
+            ) / basis[i]
+        free = anchored_response - compliance @ anchor
         u = free.copy()
         scale = np.array([1, 1, 1, 0.001])  # 速度残差以 m/s、主轴残差以千 rad/s 归一。
 
@@ -104,6 +115,7 @@ class ImplicitWrenchCoupling:
             raise ValueError(
                 "Cutting velocity response is nonlinear or contact-constrained"
             )
+        self.last_wrench[:] = wrench
         return wrench, actual, error
 
     def _iterate(self, residual, u, scale, free):

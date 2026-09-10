@@ -1,6 +1,8 @@
 """G1 真实执行器主轴加工工作站，复用已验证的材料—载荷—积分事务。"""
 
 from dataclasses import asdict
+import hashlib
+import json
 from pathlib import Path
 from types import MappingProxyType
 import mujoco
@@ -30,11 +32,13 @@ DEFAULT_SCENE = Path(__file__).resolve().parents[3] / "scenes/plate_milling"
 class PlateMillingEnv(MillingFixture):
     scene_kind = "plate_milling"
 
-    def __init__(self, scene_path=DEFAULT_SCENE):
+    def __init__(self, scene_path=DEFAULT_SCENE, *, shape="through_hole"):
         self.scene = SceneLoader().validate(scene_path)
         cfg = self.scene.config
         if cfg["kind"] != self.scene_kind:
             raise ValueError("Expected plate_milling recipe")
+        self.task = load_task_spec(self.scene)
+        self.target = self.task.make_target(shape)
         self.tool = strict_parameters(EndMillGeometry, cfg["tool"])
         self.coefficients = strict_parameters(
             MillingCoefficients, cfg["process"]["coefficients"]
@@ -85,12 +89,12 @@ class PlateMillingEnv(MillingFixture):
         )
         self.start = self.stock.local_to_world(cfg["initialization"]["tip_position_m"])
         self.servo_stride = round(1 / r["servo_hz"] / self.model.opt.timestep)
-        self.task = load_task_spec(self.scene)
+        inspect_shape(self.stock, self.target)  # 编译后的实体范围必须能容纳声明目标。
         self.reset(seed=0)
 
     @classmethod
-    def from_scene(cls, root):
-        return cls(root)
+    def from_scene(cls, root, *, shape="through_hole"):
+        return cls(root, shape=shape)
 
     def reset(self, *, seed=0):
         super().reset(seed=seed)
@@ -141,6 +145,17 @@ class PlateMillingEnv(MillingFixture):
         result = super().manifest()
         result["asset_hash"] = vendored_robot_asset_hash()
         result["scene_kind"] = self.scene_kind
+        result["target"] = asdict(self.target)
+        result["scene_hash"] = hashlib.sha256(
+            json.dumps(
+                {
+                    "physical_recipe": result["scene_hash"],
+                    "selected_target": result["target"],
+                },
+                sort_keys=True,
+                allow_nan=False,
+            ).encode()
+        ).hexdigest()
         return result
 
     def _set_motion_command(self, target):
@@ -198,6 +213,8 @@ class PlateMillingEnv(MillingFixture):
 
     def evaluate_task(self, target):
         """控制器之外检查实际孔槽；只读快照传给 P4，不把模型交给菜谱修改。"""
+        if target != self.target:
+            raise ValueError("Task evaluation must use the declared P4 target")
         shape = inspect_shape(self.stock, target)
         tip = self.stock.world_to_local(self.data.site("mill_tip").xpos)
         rpm = abs(self.process.kinematics(self.data)[3])

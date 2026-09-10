@@ -115,6 +115,7 @@ class MillingProcess:
     def reset(self):
         self.invalid_reason = None
         self.sequence = 0
+        self.coupling.reset()
         self.model.geom_conaffinity[self.blade_geom] = 1
         self.set_collision_mode(1)
 

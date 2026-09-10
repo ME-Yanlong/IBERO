@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_shape(job):
-    shape, output, scene_root = job
+    shape, output, scene_root, *options = job
+    seed = options[0] if options else 0
     out = Path(output) / shape
     out.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
@@ -31,6 +32,7 @@ def run_shape(job):
         "shape": shape,
         "passed": False,
         "rows": [],
+        "seed": seed,
     }
     env, trace = None, None
     try:
@@ -40,12 +42,13 @@ def run_shape(job):
         if robot:
             from ibero.envs.plate_milling import PlateMillingEnv
 
-            env = PlateMillingEnv.from_scene(scene_root)
+            env = PlateMillingEnv.from_scene(scene_root, shape=shape)
             report["scope"] = "S8_robot_single_seed_not_full_G8"
         else:
             env = MillingFixture.from_scene(scene_root)
+        env.reset(seed=seed)
         report["manifest"] = env.manifest()
-        target = bench_target(shape)
+        target = env.target if robot else bench_target(shape)
         report["target"] = asdict(target)
         policy = MillingBenchScript(env, target)
         trace = StockTrace(env)
@@ -72,6 +75,21 @@ def run_shape(job):
             report["rows"].append(info)
             trace.append(info)
             if len(report["rows"]) % 200 == 0 or env._done:
+                (out / "progress.json").write_text(
+                    json.dumps(
+                        {
+                            "shape": shape,
+                            "seed": seed,
+                            "sim_seconds": float(env.data.time),
+                            "wall_seconds": time.perf_counter() - started,
+                            "last_info": info,
+                            "manifest": report["manifest"],
+                        },
+                        indent=2,
+                        allow_nan=False,
+                    ),
+                    encoding="utf-8",
+                )
                 print(
                     shape,
                     round(env.data.time, 3),
@@ -162,6 +180,7 @@ def main():
         "--timestep-s", type=float, help="显式数值敏感性覆盖，另存完整解析菜谱"
     )
     p.add_argument("--cell-size-m", type=float)
+    p.add_argument("--seed", type=int, default=0)
     p.add_argument("--edge-transition-chip-m", type=float)
     args = p.parse_args()
     output = (
@@ -203,7 +222,8 @@ def main():
     print("Evidence", output, flush=True)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = [
-            pool.submit(run_shape, (s, str(output), str(args.scene))) for s in names
+            pool.submit(run_shape, (s, str(output), str(args.scene), args.seed))
+            for s in names
         ]
         for future in as_completed(jobs):
             row = future.result()
@@ -212,7 +232,7 @@ def main():
                 row["shape"], "passed", row["passed"], row.get("exception"), flush=True
             )
     report = {
-        "scope": "S7_three_shape_fixture_only_not_full_G7",
+        "scope": "three_shape_execution_subset_see_per_case_scope_not_full_G7_or_G8",
         "results": rows,
         "passed": all(r["passed"] for r in rows),
     }

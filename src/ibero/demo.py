@@ -123,11 +123,23 @@ def main() -> None:
             "cable_stretch",
             "latch_release",
             "harness_unplug",
+            "plate_milling",
         ),
         default="cable_stretch",
         help="which scripted scene to run",
     )
     parser.add_argument("--steps", type=int)
+    parser.add_argument(
+        "--shape",
+        choices=("slot", "pocket", "through_hole"),
+        default="through_hole",
+        help="plate_milling target shape",
+    )
+    parser.add_argument(
+        "--no-visual-chips",
+        action="store_true",
+        help="disable nonphysical milling chip illustrations",
+    )
     parser.add_argument(
         "--seed", type=int, default=7, help="repeatable seed used for every Enter run"
     )
@@ -169,7 +181,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.steps is None:
         args.steps = (
-            2000
+            12000
+            if args.env == "plate_milling"
+            else 2000
             if args.env == "harness_unplug"
             else 1500
             if args.env == "latch_release"
@@ -181,14 +195,17 @@ def main() -> None:
         or args.playback_rate <= 0
     ):
         parser.error("--steps and --playback-rate must be finite and positive")
-    if args.env in {"latch_release", "harness_unplug"}:
+    if args.env in {"latch_release", "harness_unplug", "plate_milling"}:
         if args.viewer and args.no_dashboard:
             parser.error(
                 "Industrial reviewer currently uses one integrated four-view window; omit --no-dashboard"
             )
         if args.replay and not args.viewer:
             parser.error("--replay requires --viewer")
-        from ibero.industrial_demo import run_demo
+        if args.env == "plate_milling":
+            from ibero.milling_demo import run_demo
+        else:
+            from ibero.industrial_demo import run_demo
 
         run_demo(args)
         return

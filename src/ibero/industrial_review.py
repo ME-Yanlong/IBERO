@@ -157,8 +157,8 @@ class IndustrialReviewer:
         self.next_live_tick = 0.0
         self.physics_wall_seconds = 0.0
         env.reset(seed=seed)
-        self.policy = industrial_policy(self.env)
-        self.trace = Trace(env)
+        self.policy = self._make_policy()
+        self.trace = self._make_trace()
         self.trace.append(env.last_info)
         if replay:
             self.trace.load(replay)
@@ -175,10 +175,16 @@ class IndustrialReviewer:
             self.env.model, self.env.resolved_config["initialization"]["origin_m"]
         )
 
+    def _make_policy(self):
+        return industrial_policy(self.env)
+
+    def _make_trace(self):
+        return Trace(self.env)
+
     def _reset(self):
         self.env.reset(seed=self.seed)
-        self.policy = industrial_policy(self.env)
-        self.trace = Trace(self.env)
+        self.policy = self._make_policy()
+        self.trace = self._make_trace()
         self.trace.append(self.env.last_info)
         self.physics_wall_seconds = 0.0
         return "reset"
@@ -289,7 +295,7 @@ class IndustrialReviewer:
     def draw(self):
         if self.resetting:
             return
-        self.views.set_state(self.trace.states[self.index])
+        self._set_view_frame()
         self.last_image = self.views.render(self.trace.infos[: self.index + 1])
         self.photo = self.ImageTk.PhotoImage(self.last_image)
         self.label.configure(image=self.photo)
@@ -309,6 +315,9 @@ class IndustrialReviewer:
         self.status.set(
             f"{state} | t={info.get('time_s', 0):.3f} s | 帧 {self.index}/{len(self.trace.states) - 1} | 积分实时因子（不含暂停/渲染）{factor:.3f} | 成功 {info.get('success', False)}"
         )
+
+    def _set_view_frame(self):
+        self.views.set_state(self.trace.states[self.index])
 
     def _drag_start(self, event):
         self.drag = (event.x, event.y, (event.y // 320) * 2 + event.x // 480)
