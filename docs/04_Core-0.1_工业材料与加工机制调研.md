@@ -1120,3 +1120,13 @@ G7 汇总加固后，`844eef3_raw_recipe_audit/` 因旧报告没有展开保存 
 `stock/recipe_attestations/844eef3_original/report.json` 的五份身份均通过；新汇总 `stock/stage_summary/844eef3_attested_recipe_audit/report.json` **G7 通过**。减半数值量试验还要求完整配置仅有指定字段变化，形状、种子与约束保持不变；旧的拒绝报告仍保留。身份不符、失败结果不能被补核洗成成功、摘要与原始探针不符、未减半以及改进给的合成反例均检查；本轮相关 **7 passed / 6.11 s**。仅证明证据链与数值检查，不增加新的物理运行数量。
 
 在观察追加结果之前，预先登记独立追加工况：正则化冻结检查点 `a557bb0`、默认菜谱不变、三形状各 **seed 200** 一次，三次都需完成原全链检查；它们不替换默认 0—9 或系数变体 100—104 的分母。这个小追加组只用于检查未参与定位的初态，不能宣称大样本泛化。
+
+### 18.27 完整失败工况复测通过与验收并发资源保护
+
+正则化版 `stock/milling_process/regularized_coeff090_seed102/through_hole/report.json` **完整通过**：42.75 s 仿真、2149.867 s 墙钟、实时因子约 0.01988，通孔体积误差 3.4507%、动态探针、保存加载回看及 P4 退刀/停主轴均通过。原 `844eef3` 的同种子系数变体失败仍保留；这是从头运行的修复回归，不是从失败帧续跑。
+
+同版 `a557bb0_fixture_three_shapes/` **3/3 通过**，仿真时间约 19.64/23.64/40.53 s（孔/槽/腔），对应墙钟约 509.838/697.786/1359.869 s；当前多路并发下实时因子低于早期较轻负载测量，不宣称计算加速。减半步长与过渡检查继续。`0d0556a` fast 真实 GUI 第一轮成功已完成，第二轮继续；30 用例中原 seed 1 直槽已全链成功，浅腔已越过旧停滞位置但尚未完成。
+
+过多验收组同时运行曾使 Windows 可提交内存仅余约 1.1 GiB，尽管物理 RAM 仍空闲约 5.6 GiB。`milling_loads/a557bb0_frozen/` 子进程退出非零、`g1_preflight/a557bb0_actual_recipe/` 报 `MemoryError: bad allocation`，均保留并标为失败；没有当成新的物理失效，也没有提高系统内存/页面文件或清理用户文件。停止新增并发、等待已完成组释放资源后，`milling_loads/a557bb0_reduced_concurrency/` 的载荷检查及 **40 tests / 5.82 s** 通过；`g1_preflight/a557bb0_reduced_concurrency/` 六姿态通过，最大关节占比约 0.86156。
+
+新增 `scripts/industrial_resources.py`，在后续三形状/30 用例/系数变体进程池启动前读 Windows 提交余量，按每 worker 1.5 GiB＋2 GiB 余量保守估算并记录；不足则不启动物理用例、非零退出。不是严格峰值保证，非 Windows 明确标“未覆盖”，没有把未知情况冒称完成容量检查。合成与实际只读拒绝路径均验证，相关 **8 passed / 6.27 s**；实际拒绝记录在 `stock/resource_preflight/intentional_rejection/`。S8 完整成组与 S9 仍未通过。

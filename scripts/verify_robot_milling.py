@@ -19,6 +19,9 @@ def main():
         "artifacts/industrial_core01/stock/robot_validation"
     ) / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out.mkdir(parents=True, exist_ok=False)
+    from industrial_resources import require_worker_budget
+
+    require_worker_budget(out, args.workers)
     rows = []
     shapes = ("slot", "pocket", "through_hole")
     with ProcessPoolExecutor(max_workers=args.workers) as pool:

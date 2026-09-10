@@ -22,6 +22,9 @@ def main():
     if base.config["kind"] != "plate_milling":
         p.error("Robot material variants require plate_milling")
     args.output.mkdir(parents=True, exist_ok=False)
+    from industrial_resources import require_worker_budget
+
+    require_worker_budget(args.output, args.workers)
     recipes = {}
     for label, scale in (("coefficients_090", 0.9), ("coefficients_110", 1.1)):
         root = args.output / label / "resolved_scene"

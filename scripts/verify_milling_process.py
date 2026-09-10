@@ -253,6 +253,9 @@ def main():
         / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     )
     output.mkdir(parents=True, exist_ok=False)
+    from industrial_resources import require_worker_budget
+
+    require_worker_budget(output, args.workers)
     if any(
         v is not None
         for v in (
