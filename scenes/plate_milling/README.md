@@ -38,6 +38,8 @@ python -m ibero.demo --env plate_milling --viewer --render-quality quality
 
 `constraints.yaml` 的 `volume_error_fraction` 与 `boundary_error_cells` 是实际裁判使用的阈值，可以收紧但不能超过冻结的 5% / 两格上限。例如将体积误差改成 1%，当前毫米网格的示例通孔会因约 3.45% 离散误差而不通过；收紧阈值不会自动细化网格或改变材料，需另外验证更细模型。
 
+`python scripts/forecast_milling_geometry.py --scene scenes/plate_milling` 可先做无积分的名义网格体积预估，目标从这份场景的 P4 读取。它不提交删料，也不是加工成功检查；特别要注意加工深度与格距不对齐以及体素中心采样的非单调误差。真实力、孔洞碰撞及回放仍须单独运行。
+
 默认 `--render-quality fast` 只关闭显示阴影和地板反射；`quality` 可恢复这些效果，不改变材料、接触或物理步长。前三格依次为全景、刀具局部、毛坯检查俯视；第三格只在独立显示副本隐藏机器人/刀具，以免刀具遮住孔洞。第四格为实际占据 XZ 剖面及全回合载荷需求峰值，不把超限拒绝的候选载荷当成已施加外力。C 可关闭纯视觉切屑。
 
 当前验收机的 OpenGL 使用 Intel 核显，虽然设备中也有 RTX 5080 Laptop GPU；不能据设备列表假定已经使用独显。工程性能报告会记录实际 OpenGL renderer、并发负载和各项耗时，项目不自动修改系统显卡偏好。fast 不是物理加速选项；目前完整细步长任务依然明显慢于实时。
