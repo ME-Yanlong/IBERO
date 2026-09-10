@@ -2,6 +2,8 @@
   "scope": "fixed_numeric_regression_fixture_not_resumable_demo",
   "origin_commit": "672725e",
   "origin_case": "slot seed 1 at 37.0169 seconds",
+  "shape": "slot",
+  "coefficient_scale": 1.0,
   "original_failure": "Implicit cutting solve did not converge",
   "engine": "3.8.1",
   "nq": 26,

@@ -131,6 +131,7 @@ class ImplicitWrenchCoupling:
 
     def _iterate(self, residual, u, scale, free):
         """同一有界半光滑 Newton；可用于仿射初猜，也可用于真实受约束动力学。"""
+        regularized_steps = 0
         # 迭代次数有上限；增加预算不是放宽根残差或实际动力学复验精度。
         for iteration in range(self.max_iterations):
             r = residual(u)
@@ -140,6 +141,7 @@ class ImplicitWrenchCoupling:
                 "velocity_and_spindle": u.tolist(),
                 "residual": r.tolist(),
                 "free_response": free.tolist(),
+                "regularized_steps": regularized_steps,
             }
             if np.linalg.norm(r * scale) < 1e-10:
                 break
@@ -189,6 +191,43 @@ class ImplicitWrenchCoupling:
                 # 通常平滑区一次 Newton 已降低一个数量级，保留这一常见快速路径。
                 if best_norm < max(1e-10, 0.1 * initial_norm):
                     break
+            if best_norm > 0.999 * initial_norm:
+                # 多个摩擦折面相交时 Newton 方向可能均不下降；仅在停滞时试有界正则化
+                # 最小二乘方向。仍用同一个真实残差接受/拒绝，不放宽根容差或改变载荷。
+                for derivative in (jac, forward, backward):
+                    normalized = derivative * scale[:, None] / scale[None, :]
+                    hessian = normalized.T @ normalized
+                    gradient = normalized.T @ (r * scale)
+                    level = max(float(np.trace(hessian)) / 4, 1.0)
+                    for damping in (1e-6, 1e-4, 0.01, 1.0, 100.0):
+                        try:
+                            delta = (
+                                np.linalg.solve(
+                                    hessian + damping * level * np.eye(4), -gradient
+                                )
+                                / scale
+                            )
+                        except np.linalg.LinAlgError:
+                            continue
+                        for factor in (2.0 ** (-i) for i in range(24)):
+                            candidate = u + factor * delta
+                            if candidate[3] <= 1:
+                                continue
+                            candidate_norm = float(
+                                np.linalg.norm(residual(candidate) * scale)
+                            )
+                            if candidate_norm < best_norm:
+                                best_u, best_norm, accepted = (
+                                    candidate,
+                                    candidate_norm,
+                                    True,
+                                )
+                                break
+                        if best_norm < max(1e-10, 0.1 * initial_norm):
+                            break
+                    if best_norm < max(1e-10, 0.1 * initial_norm):
+                        break
+                regularized_steps += 1
             if not accepted:
                 raise ValueError("Implicit cutting solve did not descend")
             u = best_u

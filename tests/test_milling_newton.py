@@ -1,6 +1,7 @@
 """有界半光滑求解：保留真实失败子步，并验证只求载荷、不改物理/材料状态。"""
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 import mujoco
 import numpy as np
@@ -8,6 +9,7 @@ import pytest
 from ibero.envs.plate_milling import PlateMillingEnv
 from ibero.processes.prepared_milling_wrench import PreparedMillingWrench
 from ibero.processes.implicit_wrench import ImplicitWrenchCoupling
+from ibero.processes.milling_forces import MillingCoefficients
 from ibero.review import Trace
 
 
@@ -28,13 +30,19 @@ def test_one_sided_derivative_not_hidden_by_negligible_central_descent():
     assert solver.last_diagnostics["iterations"] < 5
 
 
-def test_real_seed_one_fold_snapshot_converges_without_material_or_state_changes():
+@pytest.mark.parametrize(
+    "filename", ["milling_newton_seed1.json", "milling_newton_coeff090_seed102.json"]
+)
+def test_real_fold_snapshots_converge_without_material_or_state_changes(filename):
     fixture = json.loads(
-        (Path(__file__).parent / "fixtures/milling_newton_seed1.json").read_text(
-            encoding="utf-8"
-        )
+        (Path(__file__).parent / "fixtures" / filename).read_text(encoding="utf-8")
     )
-    e = PlateMillingEnv(shape="slot")
+    e = PlateMillingEnv(shape=fixture["shape"])
+    coefficients = asdict(e.coefficients)
+    for name in coefficients:
+        if name not in {"material_grade", "source"}:
+            coefficients[name] *= fixture["coefficient_scale"]
+    e.coefficients = MillingCoefficients(**coefficients)
     assert (e.model.nq, e.model.nv) == (fixture["nq"], fixture["nv"])
     assert int(Trace.spec) == fixture["state_spec"]
     # 这是具名数值回归台架的初态，不是解禁 StockTrace 跨版本回放/续跑。
@@ -70,6 +78,8 @@ def test_real_seed_one_fold_snapshot_converges_without_material_or_state_changes
         e.data.qvel.copy(),
         e.stock.state_hash(),
     )
+    before_state = np.empty(mujoco.mj_stateSize(e.model, Trace.spec))
+    mujoco.mj_getState(e.model, e.data, before_state, Trace.spec)
     wrench, _, error = e.process.coupling.solve(
         e.data, e.data.qfrc_applied, e.data.xfrc_applied, pose.position, law
     )
@@ -78,6 +88,11 @@ def test_real_seed_one_fold_snapshot_converges_without_material_or_state_changes
     assert e.stock.state_hash() == before_hash
     np.testing.assert_array_equal(e.data.qpos, before_q)
     np.testing.assert_array_equal(e.data.qvel, before_v)
+    after_state = np.empty_like(before_state)
+    mujoco.mj_getState(e.model, e.data, after_state, Trace.spec)
+    np.testing.assert_array_equal(after_state, before_state)
+    if fixture["coefficient_scale"] == 0.9:
+        assert e.process.coupling.last_diagnostics["regularized_steps"] >= 1
 
 
 @pytest.mark.parametrize("value", [0, 161, True, 2.5])
