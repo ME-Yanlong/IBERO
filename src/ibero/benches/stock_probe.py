@@ -17,7 +17,7 @@ def probe_spec(stock, *, active_only=False, radius_m=0.002):
     spec.option.gravity = [0, 0, 0]
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
     add_stock_geoms(spec, stock, active_only=active_only)
-    probe = spec.worldbody.add_body(name="probe", pos=[0, 0, 0.035])
+    probe = spec.worldbody.add_body(name="probe", pos=stock.origin + [0, 0, 0.035])
     probe.add_freejoint(name="probe_free")
     probe.add_geom(
         name="probe_geom",
@@ -32,10 +32,13 @@ def probe_spec(stock, *, active_only=False, radius_m=0.002):
     return spec
 
 
-def run_probe(model, data, x=0):
+def run_probe(model, data, x=0, *, origin=(0, 0, 0)):
     """只在 reset 设置初速度，之后无 qpos 写入、无恒定速度运动学作弊。"""
     mujoco.mj_resetData(model, data)
-    data.joint("probe_free").qpos[0] = x
+    origin = np.asarray(origin, dtype=float)
+    if origin.shape != (3,) or not np.isfinite(origin).all():
+        raise ValueError("Finite probe reference origin required")
+    data.joint("probe_free").qpos[:2] = origin[:2] + [x, 0]
     data.joint("probe_free").qvel[2] = -0.15
     mujoco.mj_forward(model, data)
     rows = []
@@ -46,7 +49,8 @@ def run_probe(model, data, x=0):
         rows.append(
             {
                 "time_s": float(data.time),
-                "z_m": float(data.body("probe").xpos[2]),
+                # 报告高度相对于声明的工件原点，避免世界平移改变孔/槽底判定。
+                "z_m": float(data.body("probe").xpos[2] - origin[2]),
                 "velocity_z_m_s": float(data.joint("probe_free").qvel[2]),
                 "contacts": data.ncon,
             }
@@ -120,11 +124,7 @@ def inspect_machined_stock(stock, target):
     这是检查台架的受控模型重建，不是原机器人场景中的在线探针操作。
     毛坯坐标/姿态受限，避免把世界 Z 探针误用于旋转工件。
     """
-    if (
-        not np.allclose(stock.origin, 0)
-        or not np.allclose(stock.rotation, np.eye(3))
-        or target.center_xy_m != (0, 0)
-    ):
+    if not np.allclose(stock.rotation, np.eye(3)) or target.center_xy_m != (0, 0):
         raise ValueError("Probe inspection supports the declared centered fixture only")
     radius = 0.00075
     start = time.perf_counter()
@@ -132,8 +132,10 @@ def inspect_machined_stock(stock, target):
     data = mujoco.MjData(model)
     binding = StockCollisionBinding(model, stock)
     binding.ensure_consistent()
-    center = run_probe(model, data)
-    neighbor = run_probe(model, data, x=stock.params.size_m[0] / 2 - 2 * radius)
+    center = run_probe(model, data, origin=stock.origin)
+    neighbor = run_probe(
+        model, data, x=stock.params.size_m[0] / 2 - 2 * radius, origin=stock.origin
+    )
     bottom = stock.params.size_m[2] / 2 - target.depth_m
     center_ok = (
         (
@@ -154,6 +156,8 @@ def inspect_machined_stock(stock, target):
     return {
         "method": "independent_dynamic_probe_from_actual_occupancy",
         "stock_state_hash": stock.state_hash(),
+        "world_origin_m": stock.origin.tolist(),
+        "reported_z_reference": "stock_origin",
         "radius_m": radius,
         "clearance_cells": (target.corner_radius_m - radius) / stock.cell_size_m,
         "checks": checks,

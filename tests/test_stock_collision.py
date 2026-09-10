@@ -115,3 +115,20 @@ def test_stock_recipe_compiles_without_fake_robot_or_cable():
     assert result.stock.volume_m3 == pytest.approx(0.006 * 0.006 * 0.002)
     assert not hasattr(result, "cable_parameters")
     result.binding.ensure_consistent()
+
+
+def test_replay_rejects_wrong_numeric_dtype_before_reset(tmp_path):
+    env = TinyProbe()
+    env.binding.commit(env.stock.prepare_removal([0], "keep-current-state"), env.data)
+    trace = StockTrace(env)
+    trace.append({"stage": "cut"})
+    path = tmp_path / "valid.npz"
+    trace.save(path)
+    with np.load(path, allow_pickle=False) as saved:
+        states, metadata = saved["states"], saved["metadata"]
+    corrupt = tmp_path / "wrong-dtype.npz"
+    np.savez_compressed(corrupt, states=states.astype(np.complex128), metadata=metadata)
+    before = env.stock.state_hash()
+    with pytest.raises(ValueError, match="physical states"):
+        StockTrace(env).load(corrupt)
+    assert env.stock.state_hash() == before

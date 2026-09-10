@@ -56,6 +56,8 @@ class MillingProcess:
         spindle_joint,
         angular_samples=128,
         edge_transition_chip_m=1e-8,
+        axis_tolerance_rad=math.acos(1 - 1e-6),
+        holder_angular_limit_rad_s=1e-3,
     ):
         if type(angular_samples) is not int or not 32 <= angular_samples <= 512:
             raise ValueError("Bounded engagement quadrature required")
@@ -75,6 +77,23 @@ class MillingProcess:
                 "Milling stock requires dedicated contype=8/conaffinity=1; cannot disable global contact"
             )
         self.nphi = angular_samples
+        self.axis_tolerance_rad = finite_number(
+            axis_tolerance_rad, "axis_tolerance_rad"
+        )
+        self.holder_angular_limit_rad_s = finite_number(
+            holder_angular_limit_rad_s, "holder_angular_limit_rad_s"
+        )
+        # 允许小幅实际姿态跟踪误差，不支持五轴加工。投影啮合的几何误差必须小于四分之一格。
+        if (
+            self.axis_tolerance_rad > 0.01
+            or self.holder_angular_limit_rad_s > 0.1
+            or (tool.cutting_length_m + tool.radius_m)
+            * math.sin(self.axis_tolerance_rad)
+            > self.stock.cell_size_m / 4
+        ):
+            raise ValueError(
+                "Fixed-axis tracking approximation exceeds bounded geometry domain"
+            )
         self.edge_transition_chip_m = finite_number(
             edge_transition_chip_m, "edge_transition_chip_m"
         )
@@ -225,10 +244,11 @@ class MillingProcess:
         reason = None
         if rpm > self.limits.max_rpm:
             reason = "spindle_out_of_range"
-        elif (
-            np.linalg.norm(angular_velocity) > 1e-3
-            or abs(rotation[:, 2] @ self.stock.rotation[:, 2] - 1) > 1e-6
-        ):
+        elif np.linalg.norm(
+            angular_velocity
+        ) > self.holder_angular_limit_rad_s or rotation[:, 2] @ self.stock.rotation[
+            :, 2
+        ] < math.cos(self.axis_tolerance_rad):
             reason = "only_fixed_axis_three_axis_milling_supported"
         elif np.linalg.norm(velocity) * dt > self.stock.cell_size_m / 4:
             reason = "motion_exceeds_geometry_substep_bound"
@@ -306,8 +326,12 @@ class MillingProcess:
             self.set_collision_mode(1)
             mujoco.mj_forward(self.model, data)
             return state("invalid", reason, world_force, world_torque, depth=depth)
+        predicted_quat = np.asarray(pose.quaternion).copy()
+        # mju_quatIntegrate 使用局部角速度；保留真实安装座的小幅转动，而非强行扶正刀具。
+        mujoco.mju_quatIntegrate(predicted_quat, rotation.T @ angular_velocity, dt)
         predicted = ToolPose(
-            tuple(np.asarray(pose.position) + evaluated_velocity * dt), pose.quaternion
+            tuple(np.asarray(pose.position) + evaluated_velocity * dt),
+            tuple(predicted_quat),
         )
         ids = (
             swept_cells(self.stock, self.tool, pose, predicted)

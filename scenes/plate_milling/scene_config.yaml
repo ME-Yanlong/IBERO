@@ -1,0 +1,70 @@
+# S8 真实 G1 单臂主轴加工；右臂仅安全停放，非双臂协同加工。
+schema_version: ibero.industrial/v0.1
+id: plate_milling
+kind: plate_milling
+backend: mujoco
+parameter_status: provisional
+physics:
+  timestep_s: 0.0001
+  control_hz: 100
+  gravity_m_s2: [0, 0, -9.81]
+materials:
+  stock:
+    size_m: [0.024, 0.020, 0.004]
+    density_kg_m3: 7850.0
+    material_grade: AISI1045-provisional
+    parameter_source: illustrative stock; no measured cutting calibration
+numerics:
+  cell_size_m: 0.001
+  max_cells: 60000
+  angular_samples: 128
+  edge_transition_chip_m: 1.0e-8
+tool:
+  radius_m: 0.004
+  cutting_length_m: 0.012
+  shank_radius_m: 0.005
+  shank_length_m: 0.020
+process:
+  coefficients:
+    tangential_pa: 1.8e+9
+    radial_pa: 0.6e+9
+    axial_pa: 0.2e+9
+    tangential_edge_n_m: 100.0
+    radial_edge_n_m: 50.0
+    axial_edge_n_m: 20.0
+    face_tangent_pa: 1.8e+9
+    face_axial_pa: 0.4e+9
+    material_grade: AISI1045-provisional
+    source: provisional
+  limits:
+    min_rpm: 1000.0
+    max_rpm: 12000.0
+    max_feed_per_tooth_m: 0.0001
+    max_axial_depth_m: 0.006
+    max_force_n: 15.0  # 安装静态检查的较严载荷包络；不降低钢材切削系数。
+    max_torque_nm: 0.15
+    max_power_w: 100.0
+    teeth: 2
+    center_cutting: true
+workcell:
+  stock_origin_m: [0.45, 0.16, 0.85]
+initialization:
+  tip_position_m: [0, 0, 0.0035]  # 工件局部坐标，仅 reset 对齐。
+  joint_jitter_rad: 0.00001  # 种子扰动关节初态，运行不再改写 qpos。
+robot:
+  arm_qpos: [-0.4696653478, 0.1480567558, -0.4091856842, 0.5957613957, -0.3352425581, -0.2216617468, 0.3704244701, -0.65, -0.35, 0, 1.1, 0, 0, 0]
+  tip_offset_m: [0.16, 0, -0.06]
+  bracket_mass_kg: 0.08
+  servo_hz: 1000
+  position_kp_n_m: 50000.0
+  position_kd_ns_m: 500.0
+  rotation_kp_nm_rad: 200.0
+  rotation_kd_nms_rad: 12.0
+  axis_tolerance_rad: 0.01  # 有界三轴姿态误差，刃区投影误差 < 四分之一体素。
+  holder_angular_limit_rad_s: 0.1
+control:
+  rpm: 6000.0
+  feed_m_s: 0.001
+  plunge_m_s: 0.0005
+  settle_seconds: 0.5
+  tracking_tolerance_m: 0.0001

@@ -34,7 +34,16 @@ def run_shape(job):
     }
     env, trace = None, None
     try:
-        env = MillingFixture.from_scene(scene_root)
+        from ibero.core.scene_loader import SceneLoader
+
+        robot = SceneLoader().validate(scene_root).config["kind"] == "plate_milling"
+        if robot:
+            from ibero.envs.plate_milling import PlateMillingEnv
+
+            env = PlateMillingEnv.from_scene(scene_root)
+            report["scope"] = "S8_robot_single_seed_not_full_G8"
+        else:
+            env = MillingFixture.from_scene(scene_root)
         report["manifest"] = env.manifest()
         target = bench_target(shape)
         report["target"] = asdict(target)
@@ -77,6 +86,8 @@ def run_shape(job):
         report["shape_check"] = inspect_shape(env.stock, target)
         report["invalid_reason"] = env.process.invalid_reason
         report["controller_finished"] = policy.finished
+        if robot:
+            report["task_check"] = env.evaluate_task(target)
         trace.save(out / "trace.npz")
         expected_hash = env.stock.state_hash()
         expected_qpos = env.data.qpos.copy()
@@ -116,6 +127,7 @@ def run_shape(job):
             and report["shape_check"]["passed"]
             and report["probe_check"]["passed"]
             and report["replay_check"]["passed"]
+            and (not robot or report["task_check"]["result"]["success"])
         )
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"

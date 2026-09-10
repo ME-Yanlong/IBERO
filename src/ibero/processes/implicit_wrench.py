@@ -65,6 +65,49 @@ class ImplicitWrenchCoupling:
             residual(current) * scale
         ) < np.linalg.norm(residual(u) * scale):
             u = current
+        linear_failure = None
+        try:
+            u = self._iterate(residual, u, scale, free)
+        except ValueError as error:
+            linear_failure = str(error)
+        wrench = wrench_at_velocity(u)
+        # 第八次独立预测复验真实响应；G1 原始干摩擦/限矩会使响应呈分段非线性。
+        actual = self._trial(data, base_generalized, base_body, point, wrench)
+        error = float(np.linalg.norm((actual - u) * scale))
+        if linear_failure or error > 1e-6:
+            linear_error = error
+
+            def full_residual(value):
+                if value[3] <= 1 or not np.isfinite(value).all():
+                    raise ValueError("Spindle stalled in implicit cutting prediction")
+                return value - self._trial(
+                    data, base_generalized, base_body, point, wrench_at_velocity(value)
+                )
+
+            # 不移除 G1 摩擦、不放松残差；直接以独立 MuJoCo 真实响应迭代闭环方程。
+            if current[3] > 1 and np.linalg.norm(
+                full_residual(current) * scale
+            ) < np.linalg.norm(full_residual(u) * scale):
+                u = current
+            u = self._iterate(full_residual, u, scale, free)
+            wrench = wrench_at_velocity(u)
+            actual = self._trial(data, base_generalized, base_body, point, wrench)
+            error = float(np.linalg.norm((actual - u) * scale))
+            self.last_diagnostics.update(
+                method="full_nonlinear_physics",
+                linear_error=linear_error,
+                linear_failure=linear_failure,
+            )
+        else:
+            self.last_diagnostics["method"] = "verified_affine_physics"
+        if error > 1e-6:
+            raise ValueError(
+                "Cutting velocity response is nonlinear or contact-constrained"
+            )
+        return wrench, actual, error
+
+    def _iterate(self, residual, u, scale, free):
+        """同一有界半光滑 Newton；可用于仿射初猜，也可用于真实受约束动力学。"""
         for iteration in range(40):
             r = residual(u)
             self.last_diagnostics = {
@@ -115,12 +158,4 @@ class ImplicitWrenchCoupling:
                 raise ValueError("Implicit cutting solve did not descend")
         if np.linalg.norm(residual(u) * scale) >= 1e-8:
             raise ValueError("Implicit cutting solve did not converge")
-        wrench = wrench_at_velocity(u)
-        # 第八次独立预测复验真实响应；没有用线性近似自身充当通过证据。
-        actual = self._trial(data, base_generalized, base_body, point, wrench)
-        error = float(np.linalg.norm((actual - u) * scale))
-        if error > 1e-6:
-            raise ValueError(
-                "Cutting velocity response is nonlinear or contact-constrained"
-            )
-        return wrench, actual, error
+        return u

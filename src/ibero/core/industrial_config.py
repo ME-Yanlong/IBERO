@@ -20,6 +20,11 @@ def exact(mapping, keys, path):
 
 
 def validate_industrial(config, constraints):
+    if config.get("kind") == "plate_milling":
+        from ibero.core.plate_milling_config import validate_plate_milling
+
+        validate_plate_milling(config, constraints)
+        return
     if config.get("kind") == "milling_bench":
         from ibero.core.milling_config import validate_milling_bench
 

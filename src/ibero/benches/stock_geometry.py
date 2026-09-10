@@ -87,14 +87,34 @@ def section_image(stock, path):
     slices = [occ[:, :, -1], occ[:, occ.shape[1] // 2, :], occ[occ.shape[0] // 2, :, :]]
     canvas = Image.new("RGB", (900, 350), (20, 25, 32))
     draw = ImageDraw.Draw(canvas)
-    for index, data in enumerate(slices):
-        rgb = np.where(data.T[::-1, :, None], [150, 170, 185], [25, 35, 45]).astype(
-            np.uint8
+    for index, (data, axes) in enumerate(zip(slices, ((0, 1), (0, 2), (1, 2)))):
+        # 按真实米制尺寸等比例显示，不能把薄板截面拉伸成方块；不足一格的边界保留真实宽度。
+        span = np.asarray(stock.params.size_m)[list(axes)]
+        scale = min(280 / span[0], 250 / span[1])
+        x0, y0 = (
+            10 + 300 * index + (280 - scale * span[0]) / 2,
+            60 + (250 - scale * span[1]) / 2,
         )
-        tile = Image.fromarray(rgb)
-        tile.thumbnail((280, 280))
-        tile = tile.resize((280, 280), Image.Resampling.NEAREST)
-        canvas.paste(tile, (10 + 300 * index, 40))
+        draw.rectangle(
+            (x0, y0, x0 + scale * span[0], y0 + scale * span[1]), fill=(25, 35, 45)
+        )
+        for i, j in np.argwhere(data):
+            lo = np.array([i, j]) * stock.cell_size_m
+            hi = np.minimum(lo + stock.cell_size_m, span)
+            draw.rectangle(
+                (
+                    x0 + scale * lo[0],
+                    y0 + scale * (span[1] - hi[1]),
+                    x0 + scale * hi[0],
+                    y0 + scale * (span[1] - lo[1]),
+                ),
+                fill=(150, 170, 185),
+            )
+        draw.text(
+            (10 + 300 * index, 30),
+            f"{span[0] * 1000:g} x {span[1] * 1000:g} mm (equal scale)",
+            fill=(175, 185, 200),
+        )
         draw.text(
             (10 + 300 * index, 10),
             ["TOP", "X-Z SECTION", "Y-Z SECTION"][index],

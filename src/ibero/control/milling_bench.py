@@ -57,16 +57,25 @@ class MillingBenchScript:
         end = self.waypoints[-1][0].copy()
         end[2] = safe_z
         self.waypoints.append((end, "retract"))
+        # 目标形状用工件局部坐标定义；实际机器人命令必须转换到世界坐标。
+        self.waypoints = [
+            (env.stock.local_to_world(p), phase) for p, phase in self.waypoints
+        ]
         self.nominal = env.data.site("mill_tip").xpos.copy()
         self.index = 0
         self.phase = "spin_up"
         self.finished = False
         self.stop_started = None
+        self.spindle_ready = False
 
     def command(self, env):
         c = self.config
         actual = env.data.site("mill_tip").xpos.copy()
-        if env.data.time < c["settle_seconds"]:
+        if not self.spindle_ready:
+            self.spindle_ready = bool(
+                env.data.time >= c["settle_seconds"]
+                and env.process.kinematics(env.data)[3] >= 0.95 * c["rpm"]
+            )
             return self.nominal.copy(), c["rpm"]
         if self.index >= len(self.waypoints):
             self.phase = "stop_spindle"

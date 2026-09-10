@@ -150,7 +150,8 @@ class StockTrace:
         if meta.get("stock_hash") != self.env.stock.stock_hash:
             raise ValueError("Initial stock mismatch")
         if (
-            states.ndim != 2
+            states.dtype != np.dtype(np.float64)
+            or states.ndim != 2
             or not 1 <= len(states) <= 200000
             or states.shape[1] != mujoco.mj_stateSize(self.env.model, Trace.spec)
             or not np.isfinite(states).all()

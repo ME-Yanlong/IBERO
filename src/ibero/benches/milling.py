@@ -55,6 +55,11 @@ def add_spindle(
         type=mujoco.mjtJoint.mjJNT_HINGE,
         axis=[0, 0, 1],
         limited=False,
+        # 工具转子不是 G1 手臂电机，不能继承父级 g1 的 0.3 N·m 摩擦和 0.01 附加惯量。
+        # 真实惯量来自已声明的转子几何/质量；此原型未标定轴承损耗。
+        frictionloss=0,
+        armature=0,
+        damping=0,
     )
     rotor.add_geom(
         name=prefix + "blade",
@@ -267,15 +272,13 @@ class MillingFixture:
             raise ValueError("Finite target and nonnegative spindle command required")
         if type(substeps) is not int or not 1 <= substeps <= 5000:
             raise ValueError("Invalid milling substep count")
-        for i in range(3):
-            self.data.ctrl[self.model.actuator(f"mill_axis_{i}").id] = (
-                target[i] - self.start[i]
-            )
+        self._set_motion_command(target)
         self.data.ctrl[self.model.actuator("mill_motor").id] = rpm * np.pi / 30
         total_removed = 0.0
         peak_force, peak_torque, peak_power, peak_shank_penetration = 0.0, 0.0, 0.0, 0.0
         housing = self.model.geom("mill_housing").id
         for _ in range(substeps):
+            self._before_physics_step()
             load_evaluation_time = float(self.data.time)
             self.loads.begin(self.data)
             try:
@@ -298,6 +301,11 @@ class MillingFixture:
             total_removed += state.removed_volume_m3
             mujoco.mj_step(self.model, self.data)
             mujoco.mj_forward(self.model, self.data)
+            robot_reason = self._after_physics_step()
+            if robot_reason:
+                self._done = True
+                self.process.invalid_reason = robot_reason
+                break
             for contact in self.data.contact:
                 if housing in (contact.geom1, contact.geom2):
                     peak_shank_penetration = max(
@@ -364,3 +372,16 @@ class MillingFixture:
         )
         self.last_info = info
         return info
+
+    def _set_motion_command(self, target):
+        """台架只写三轴执行器；机器人复用过程步进而提供自己的执行器映射。"""
+        for i in range(3):
+            self.data.ctrl[self.model.actuator(f"mill_axis_{i}").id] = (
+                target[i] - self.start[i]
+            )
+
+    def _before_physics_step(self):
+        pass
+
+    def _after_physics_step(self):
+        return None
