@@ -19,6 +19,7 @@ def exact(mapping, keys, path):
 
 
 def validate_industrial(config, constraints):
+    robot_scene = config.get("kind") == "latch_release"
     exact(
         config,
         {
@@ -31,14 +32,20 @@ def validate_industrial(config, constraints):
             "mechanism",
             "numerics",
             "parameter_status",
-        },
+        }
+        | ({"robot", "initialization", "control"} if robot_scene else set()),
         "scene",
     )
     if config["schema_version"] != SCHEMA or config["backend"] != "mujoco":
         raise ValueError(
             "Industrial fixtures require the declared schema and mujoco backend"
         )
-    if config["kind"] not in {"empty_bench", "latch_bench", "stock_bench"}:
+    if config["kind"] not in {
+        "empty_bench",
+        "latch_bench",
+        "stock_bench",
+        "latch_release",
+    }:
         raise ValueError("Unsupported industrial scene kind")
     if not isinstance(config["id"], str) or not config["id"].strip():
         raise ValueError("id must be nonempty")
@@ -63,13 +70,32 @@ def validate_industrial(config, constraints):
             "control period must be an integral bounded number of physics substeps"
         )
     exact(constraints, {"safety", "task"}, "constraints")
-    exact(constraints["safety"], {"max_force_n", "max_deflection_m"}, "safety")
+    exact(
+        constraints["safety"],
+        {"max_force_n", "max_deflection_m"}
+        | (
+            {"self_collision_penetration_m", "grip_penetration_m"}
+            if robot_scene
+            else set()
+        ),
+        "safety",
+    )
     for key, value in constraints["safety"].items():
         finite_number(value, key)
-    exact(constraints["task"], {"max_seconds"}, "task")
-    finite_number(constraints["task"]["max_seconds"], "max_seconds")
+    exact(
+        constraints["task"],
+        {"max_seconds"}
+        | (
+            {"withdrawal_distance_m", "hold_seconds", "pose_tolerance_rad"}
+            if robot_scene
+            else set()
+        ),
+        "task",
+    )
+    for key, value in constraints["task"].items():
+        finite_number(value, key)
     kind = config["kind"]
-    if kind == "latch_bench":
+    if kind in {"latch_bench", "latch_release"}:
         exact(config["materials"], {"beam"}, "materials")
         beam = strict_parameters(BeamParameters, config["materials"]["beam"])
         latch = strict_parameters(LatchParameters, config["mechanism"])
@@ -102,3 +128,77 @@ def validate_industrial(config, constraints):
     else:
         for key in ("materials", "mechanism", "numerics"):
             exact(config[key], set(), key)
+    if robot_scene:
+        validate_latch_robot(config, constraints)
+
+
+def vector(value, n, name):
+    if not isinstance(value, list) or len(value) != n:
+        raise ValueError(f"{name} must have {n} components")
+    for item in value:
+        finite_number(item, name, minimum=-1e6, positive=False)
+
+
+def validate_latch_robot(config, constraints):
+    robot = config["robot"]
+    exact(
+        robot,
+        {
+            "preset",
+            "arm_qpos",
+            "left_tool",
+            "right_tool",
+            "press_tcp_offset_m",
+            "press_stem_height_m",
+        },
+        "robot",
+    )
+    if (robot["preset"], robot["left_tool"], robot["right_tool"]) != (
+        "g1_upperbody_v0",
+        "press_probe",
+        "robotiq_2f85",
+    ):
+        raise ValueError("Only G1 left press probe / right 2F-85 is implemented")
+    vector(robot["arm_qpos"], 14, "arm_qpos")
+    vector(robot["press_tcp_offset_m"], 3, "press_tcp_offset_m")
+    finite_number(robot["press_stem_height_m"], "press_stem_height_m")
+    init = config["initialization"]
+    exact(
+        init,
+        {"origin_m", "quaternion_wxyz", "origin_jitter_m", "friction_jitter"},
+        "initialization",
+    )
+    for key in ("origin_m", "origin_jitter_m"):
+        vector(init[key], 3, key)
+    if any(v < 0 or v > 0.001 for v in init["origin_jitter_m"]):
+        raise ValueError("Initial jitter is limited to [0, 1 mm] per axis")
+    vector(init["quaternion_wxyz"], 4, "quaternion_wxyz")
+    if not math.isclose(sum(v * v for v in init["quaternion_wxyz"]), 1, abs_tol=1e-8):
+        raise ValueError("Unit quaternion required")
+    finite_number(init["friction_jitter"], "friction_jitter", positive=False)
+    if init["friction_jitter"] >= config["mechanism"]["friction"]:
+        raise ValueError("Friction perturbation must remain positive")
+    ctrl = config["control"]
+    exact(
+        ctrl,
+        {
+            "settle_seconds",
+            "grasp_seconds",
+            "press_speed_m_s",
+            "pull_speed_m_s",
+            "press_clearance_m",
+            "max_press_travel_m",
+            "max_pull_force_n",
+            "grip_command",
+        },
+        "control",
+    )
+    for key, value in ctrl.items():
+        finite_number(value, key, minimum=-1 if key == "grip_command" else 0)
+    if (
+        ctrl["grip_command"] > 1
+        or ctrl["max_pull_force_n"] > constraints["safety"]["max_force_n"]
+    ):
+        raise ValueError("Controller cannot exceed declared force/grip bounds")
+    if constraints["task"]["withdrawal_distance_m"] < 0.07:
+        raise ValueError("Full withdrawal must clear the 65 mm guide keel")

@@ -117,11 +117,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--env",
-        choices=("cable_tension", "cable_handover", "cable_stretch"),
+        choices=("cable_tension", "cable_handover", "cable_stretch", "latch_release"),
         default="cable_stretch",
         help="which scripted scene to run",
     )
-    parser.add_argument("--steps", type=int, default=600)
+    parser.add_argument("--steps", type=int)
     parser.add_argument(
         "--seed", type=int, default=7, help="repeatable seed used for every Enter run"
     )
@@ -161,12 +161,21 @@ def main() -> None:
         help="review an existing trace; requires --viewer and the same scene",
     )
     args = parser.parse_args()
+    if args.steps is None:
+        args.steps = 1500 if args.env == "latch_release" else 600
     if (
         args.steps <= 0
         or not np.isfinite(args.playback_rate)
         or args.playback_rate <= 0
     ):
         parser.error("--steps and --playback-rate must be finite and positive")
+    if args.env == "latch_release":
+        if args.replay and not args.viewer:
+            parser.error("--replay requires --viewer")
+        from ibero.industrial_demo import run_demo
+
+        run_demo(args)
+        return
     if args.env == "cable_tension" and (args.replay or args.save_trace):
         parser.error("Physical trace/replay requires cable_handover or cable_stretch")
     env_id = {

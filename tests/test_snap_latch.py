@@ -57,3 +57,45 @@ def test_invalid_latches_until_reset():
         fixture.step(0, 0)
     fixture.reset()
     assert fixture.observer.invalid_reason is None
+
+
+def test_recipe_controls_fixture_parameters():
+    from pathlib import Path
+    from ibero.core.scene_loader import SceneLoader
+
+    scene = SceneLoader().validate(
+        Path(__file__).resolve().parents[1] / "scenes/latch_bench"
+    )
+    fixture = LatchFixture.from_scene(scene)
+    assert fixture.model.opt.timestep == scene.config["physics"]["timestep_s"]
+    assert fixture.observer.max_force_n == scene.constraints["safety"]["max_force_n"]
+
+
+def test_latch_observation_is_rigid_frame_invariant():
+    import mujoco
+    import numpy as np
+    from ibero.core.scene_compiler import fixture_spec
+    from ibero.mechanisms.snap_latch import add_latch, LatchObserver
+    from ibero.materials.parameters import BeamParameters, LatchParameters
+
+    spec = fixture_spec(
+        {
+            "id": "rotated",
+            "physics": {"timestep_s": 0.0000025, "gravity_m_s2": [0, 0, 0]},
+        }
+    )
+    names = add_latch(
+        spec,
+        BeamParameters(),
+        LatchParameters(),
+        origin=[0.48, 0.2, 0.85],
+        quaternion=[2**-0.5, 0, 0, 2**-0.5],
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    row = LatchObserver(model, names).observe(data)
+    assert row["clearance_m"] == pytest.approx(-0.003)
+    assert row["deflection_m"] == pytest.approx(0)
+    assert row["latch_state"] == "locked"
+    np.testing.assert_allclose(data.body("latch_plug").xpos, [0.48, 0.2, 0.85])

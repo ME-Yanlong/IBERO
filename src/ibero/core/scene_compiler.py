@@ -9,6 +9,8 @@ import mujoco
 from ibero.core.scene_loader import ValidatedScene
 from ibero.materials.cable import CableParameters
 from ibero.robots.g1_upperbody_2f85 import HandoverModelHandles, build_g1_handover_model
+from ibero.robots.g1_industrial import IndustrialRobotHandles
+from ibero.mechanisms.snap_latch import LatchNames
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,16 @@ class CompiledFixture:
     model: mujoco.MjModel
 
 
+@dataclass(frozen=True)
+class CompiledLatchCell:
+    """实际卡扣工作站产物，不扩张成任意引擎/材料容器。"""
+
+    scene: ValidatedScene
+    model: mujoco.MjModel
+    handles: IndustrialRobotHandles
+    latch_names: LatchNames
+
+
 def fixture_spec(config):
     """空台架只负责求解时钟、重力和照明；对象由相应 builder 添加。"""
     spec = mujoco.MjSpec()
@@ -43,8 +55,37 @@ def fixture_spec(config):
 class SceneCompiler:
     """The narrow Core-0.1 configuration-to-backend compilation seam."""
 
-    def compile(self, scene: ValidatedScene) -> CompiledScene | CompiledFixture:
+    def compile(
+        self, scene: ValidatedScene
+    ) -> CompiledScene | CompiledFixture | CompiledLatchCell:
         if scene.config.get("schema_version") == "ibero.industrial/v0.1":
+            if scene.config["kind"] == "latch_release":
+                from ibero.robots.g1_industrial import robot_spec, robot_handles
+                from ibero.mechanisms.snap_latch import add_latch
+                from ibero.materials.parameters import (
+                    BeamParameters,
+                    LatchParameters,
+                    strict_parameters,
+                )
+
+                cfg = scene.config
+                spec = robot_spec(
+                    timestep=cfg["physics"]["timestep_s"],
+                    press_tcp_offset_m=cfg["robot"]["press_tcp_offset_m"],
+                    press_stem_height_m=cfg["robot"]["press_stem_height_m"],
+                )
+                spec.option.gravity = cfg["physics"]["gravity_m_s2"]
+                names = add_latch(
+                    spec,
+                    strict_parameters(BeamParameters, cfg["materials"]["beam"]),
+                    strict_parameters(LatchParameters, cfg["mechanism"]),
+                    segments=cfg["numerics"]["segments"],
+                    fixture=False,
+                    origin=cfg["initialization"]["origin_m"],
+                    quaternion=cfg["initialization"]["quaternion_wxyz"],
+                )
+                model = spec.compile()
+                return CompiledLatchCell(scene, model, robot_handles(model), names)
             if scene.config["kind"] == "latch_bench":
                 from ibero.benches.latch import build_latch_fixture
                 from ibero.materials.parameters import (

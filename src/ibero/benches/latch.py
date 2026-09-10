@@ -63,6 +63,24 @@ def build_latch_fixture(
 
 
 class LatchFixture:
+    @classmethod
+    def from_scene(cls, scene):
+        """P4 菜谱到运行台架：物性、数值设置、安全阈值都从已校验文件读取。"""
+        from ibero.materials.parameters import strict_parameters
+
+        if scene.config.get("kind") != "latch_bench":
+            raise ValueError("LatchFixture requires latch_bench recipe")
+        sim = cls(
+            strict_parameters(BeamParameters, scene.config["materials"]["beam"]),
+            strict_parameters(LatchParameters, scene.config["mechanism"]),
+            segments=scene.config["numerics"]["segments"],
+            timestep=scene.config["physics"]["timestep_s"],
+            **scene.constraints["safety"],
+        )
+        sim.model.opt.gravity[:] = scene.config["physics"]["gravity_m_s2"]
+        sim.reset()
+        return sim
+
     def __init__(
         self,
         beam=None,

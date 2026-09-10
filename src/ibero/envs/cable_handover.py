@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import importlib.util
 import json
 from collections import deque
 from pathlib import Path
@@ -17,9 +15,10 @@ import numpy as np
 from ibero.control import BimanualResolvedRateController
 from ibero.core.audit import SafetyAuditor
 from ibero.core.scene_compiler import SceneCompiler
-from ibero.core.scene_loader import SceneLoader, ValidatedScene
+from ibero.core.scene_loader import SceneLoader
 from ibero.core.sensors import wrist_wrench
-from ibero.core.task_api import TaskSpec, TaskState
+from ibero.core.task_api import TaskState
+from ibero.core.task_loading import load_task_spec as _load_task_spec
 from ibero.materials.mechanics import CableMechanics
 from ibero.robots.g1_upperbody_2f85 import (
     HANDOVER_ARM_QPOS,
@@ -28,21 +27,6 @@ from ibero.robots.g1_upperbody_2f85 import (
 
 
 DEFAULT_SCENE_PATH = Path(__file__).resolve().parents[3] / "scenes" / "cable_handover"
-
-
-def _load_task_spec(scene: ValidatedScene) -> TaskSpec:
-    module_name = (
-        f"ibero_scene_{hashlib.sha256(str(scene.task_path).encode()).hexdigest()[:12]}"
-    )
-    module_spec = importlib.util.spec_from_file_location(module_name, scene.task_path)
-    if module_spec is None or module_spec.loader is None:
-        raise RuntimeError(f"Could not import task specification {scene.task_path}")
-    module = importlib.util.module_from_spec(module_spec)
-    module_spec.loader.exec_module(module)
-    task = getattr(module, "TASK_SPEC", None)
-    if not isinstance(task, TaskSpec):
-        raise TypeError("task_spec.py must expose TASK_SPEC derived from TaskSpec")
-    return task
 
 
 class CableHandoverEnv(gym.Env[dict[str, np.ndarray], np.ndarray]):

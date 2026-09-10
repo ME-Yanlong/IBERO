@@ -1,0 +1,50 @@
+schema_version: ibero.industrial/v0.1
+id: latch_release
+kind: latch_release
+backend: mujoco
+parameter_status: provisional
+physics:
+  timestep_s: 0.0000025
+  control_hz: 100
+  gravity_m_s2: [0, 0, -9.81]
+materials:
+  beam:
+    length_m: 0.06
+    width_m: 0.012
+    thickness_m: 0.002
+    young_pa: 2000000000.0
+    density_kg_m3: 1200.0
+    relaxation_time_s: 0.003
+    parameter_source: provisional rectangular polymer beam; not measured
+mechanism:
+  hook_height_m: 0.006
+  hook_length_m: 0.004
+  overlap_m: 0.003
+  axial_gap_m: 0.001
+  friction: 0.3
+  plug_mass_kg: 0.06
+numerics:
+  segments: 8
+robot:
+  preset: g1_upperbody_v0
+  left_tool: press_probe
+  right_tool: robotiq_2f85
+  # 左工具向内偏置避让躯干；夹爪夹持面水平，防止导向受扭卡死。
+  press_tcp_offset_m: [0.21, -0.06, 0]
+  press_stem_height_m: 0.035
+  arm_qpos: [-0.4696653478, 0.1480567558, -0.4091856842, 0.5957613957, -0.3352425581, -0.2216617468, 0.3704244701, -0.5299340992, 0.0325193249, 0.3605278197, 0.9340626702, 0.1998618952, -0.4490535980, -0.1869254598]
+initialization:
+  origin_m: [0.48, 0, 0.87]
+  quaternion_wxyz: [0.7071067811865476, 0, 0, 0.7071067811865476]
+  # seed 确实改变物体初位与接触摩擦；解析后的值进入报告。
+  origin_jitter_m: [0.0001, 0.0001, 0.0001]
+  friction_jitter: 0.015
+control:
+  settle_seconds: 0.7
+  grasp_seconds: 0.6
+  press_speed_m_s: 0.006
+  pull_speed_m_s: 0.02
+  press_clearance_m: 0.0012
+  max_press_travel_m: 0.019
+  max_pull_force_n: 3.0
+  grip_command: 1.0
