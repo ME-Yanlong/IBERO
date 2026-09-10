@@ -1130,3 +1130,15 @@ G7 汇总加固后，`844eef3_raw_recipe_audit/` 因旧报告没有展开保存 
 过多验收组同时运行曾使 Windows 可提交内存仅余约 1.1 GiB，尽管物理 RAM 仍空闲约 5.6 GiB。`milling_loads/a557bb0_frozen/` 子进程退出非零、`g1_preflight/a557bb0_actual_recipe/` 报 `MemoryError: bad allocation`，均保留并标为失败；没有当成新的物理失效，也没有提高系统内存/页面文件或清理用户文件。停止新增并发、等待已完成组释放资源后，`milling_loads/a557bb0_reduced_concurrency/` 的载荷检查及 **40 tests / 5.82 s** 通过；`g1_preflight/a557bb0_reduced_concurrency/` 六姿态通过，最大关节占比约 0.86156。
 
 新增 `scripts/industrial_resources.py`，在后续三形状/30 用例/系数变体进程池启动前读 Windows 提交余量，按每 worker 1.5 GiB＋2 GiB 余量保守估算并记录；不足则不启动物理用例、非零退出。不是严格峰值保证，非 Windows 明确标“未覆盖”，没有把未知情况冒称完成容量检查。合成与实际只读拒绝路径均验证，相关 **8 passed / 6.27 s**；实际拒绝记录在 `stock/resource_preflight/intentional_rejection/`。S8 完整成组与 S9 仍未通过。
+
+### 18.28 新 G7 闭合、完整 GUI 与显示成本实测
+
+`stock/stage_summary/a557bb0_frozen/report.json` **G7 通过**。同一正则化源码的三形状、载荷检查及两类数值敏感性均齐全；减半步长的体积不变，峰值力变化约 0.297%；减半刃口过渡的体积不变，峰值力变化约 0.00549%。完整展开的菜谱也通过“只改指定数值字段”核对，不借旧源码通过结果替代。
+
+`stock/viewer/844eef3_full_hole/report.json` 两轮完整真实加工均成功，初始等待、暂停、单步、回看不积分、回放、重跑以及结束后窗口保持全部通过；全程源码一致，墙钟约 **6720.422 s（112 分钟）**，包含两轮物理、显示与交互，不是无渲染 RTF。旧默认显示较重，后续 fast 版本另跑，不沿用它的 GUI 结论。额外尝试的指定窗口截图脚本被本机 PowerShell 执行策略拒绝，未改策略，已移除这份未运行临时文件；正常验收器保存的回合截图/轨迹不受影响。
+
+`stock/review_performance/0d0556a_fast_gui_hole/report.json` 使用该冻结版第一轮真实成功轨迹（4277 帧、196 次材料事件），30 次显示采样：三视图＋面板中位约 **85.13 ms**、p95 123.68 ms；显示状态恢复中位约 **2.72 ms**、p95 4.70 ms。实际 OpenGL 仍是 Intel Graphics，live 物理/材料隔离通过。与此前约 396 ms 的不同负载运行相比可见显示改善，但不是严格同负载加速比，更不是物理实时因子。首轮实际四视图已查看：通孔俯视、贯通剖面与全回合力峰值可见。
+
+`stock/robot_variants/844eef3_coefficients_held_out/report.json` 的十例结束，系数 0.9 **4/5**、1.1 **5/5**，符合各 4/5 阶段门槛；0.9 seed 102 旧求解失败保留。目录名沿用运行前命名，因它已用于诊断，不再称独立留出；新版脚本输出明确 `development_regression`。`0d0556a` 对应变体组仍在重新运行，`a557bb0` 对已知失败的修复全链通过只是额外证据，不混入旧十例分母。
+
+开发分支在 **`5c2aa56`** 成功推送 GitHub，main 仍保持原基线。此次仅对单次 Git 命令使用 Windows `schannel` TLS 后端，未关闭证书验证、未修改全局配置。G8 仍等待完整三形状十种子分母及各冻结版所需证据，S9 尚未执行架构收敛。
