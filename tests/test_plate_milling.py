@@ -23,6 +23,23 @@ def env():
     return PlateMillingEnv()
 
 
+@pytest.mark.parametrize(
+    "field,value", [("volume_error_fraction", 0.01), ("boundary_error_cells", 0.25)]
+)
+def test_scene_stricter_shape_criteria_are_applied(env, field, value):
+    # 合成已去除孔仅测试裁判，不是物理加工成功证据。当前毫米格孔有约 3.45% 体积误差。
+    mask = env.target.planar_sdf(env.stock.centers[:, :2]) <= 0
+    event = env.stock.prepare_removal(np.flatnonzero(mask), "synthetic-shape-criteria")
+    env.binding.commit(event, env.data)
+    assert env.evaluate_task(env.target)["shape_check"]["passed"]
+    env.scene.constraints["task"][field] = value
+    validate_plate_milling(env.scene.config, env.scene.constraints)
+    env.task.reset()
+    result = env.evaluate_task(env.target)
+    assert not result["shape_check"]["passed"]
+    assert not result["result"]["success"]
+
+
 def test_spindle_does_not_inherit_g1_arm_friction_or_armature(env):
     m = env.model
     spindle = m.joint("mill_spindle")

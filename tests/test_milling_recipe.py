@@ -99,3 +99,25 @@ def test_small_pocket_perimeter_covers_target_without_dense_repeated_paths():
         env.stock.commit(env.stock.prepare_removal(ids, f"path-coverage-{i}"))
         start = point
     assert inspect_shape(env.stock, target)["passed"]
+
+
+def test_bench_reads_stricter_shape_criteria_and_inspector_rejects_relaxation():
+    import numpy as np
+    from ibero.control.milling_bench import bench_target
+
+    env = MillingFixture.from_scene(ROOT / "scenes/milling_bench")
+    target = bench_target("through_hole")
+    ids = np.flatnonzero(target.planar_sdf(env.stock.centers[:, :2]) <= 0)
+    env.binding.commit(env.stock.prepare_removal(ids, "synthetic-criteria"), env.data)
+    assert env.inspect_target(target)["passed"]
+    env.scene.constraints["task"]["volume_error_fraction"] = 0.01
+    report = env.inspect_target(target)
+    assert not report["passed"] and report["volume_error_limit_fraction"] == 0.01
+    for options in (
+        {"volume_error_fraction": True},
+        {"volume_error_fraction": float("nan")},
+        {"volume_error_fraction": 0.5},
+        {"boundary_error_cells": 3},
+    ):
+        with pytest.raises(ValueError):
+            inspect_shape(env.stock, target, **options)

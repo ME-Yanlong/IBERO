@@ -258,6 +258,20 @@ class MillingFixture:
             "seed": self.seed_value,
         }
 
+    def inspect_target(self, target):
+        """只读裁判使用用户菜谱的收紧阈值；不能校验了 YAML 却固定按缺省门槛评分。"""
+        from ibero.processes.shape_check import inspect_shape
+
+        criteria = (
+            {}
+            if self.scene is None
+            else {
+                name: self.scene.constraints["task"][name]
+                for name in ("volume_error_fraction", "boundary_error_cells")
+            }
+        )
+        return inspect_shape(self.stock, target, **criteria)
+
     def step(self, target, rpm, *, substeps=50, fault_at=None):
         if self._done or self._replay_restored:
             raise RuntimeError("Finished/replayed milling must reset")

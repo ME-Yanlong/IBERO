@@ -124,7 +124,21 @@ def run_shape(job):
                 )
             if env._done or policy.finished:
                 break
-        report["shape_check"] = inspect_shape(env.stock, target)
+        if hasattr(env, "inspect_target"):
+            report["shape_check"] = env.inspect_target(target)
+        else:
+            # 验收脚本可审计旧冻结物理源码；旧入口只能支持明确的原缺省门槛。
+            if any(
+                env.scene.constraints["task"][name] != expected
+                for name, expected in (
+                    ("volume_error_fraction", 0.05),
+                    ("boundary_error_cells", 2),
+                )
+            ):
+                raise ValueError(
+                    "Frozen legacy runtime cannot apply stricter shape criteria"
+                )
+            report["shape_check"] = inspect_shape(env.stock, target)
         report["invalid_reason"] = env.process.invalid_reason
         report["controller_finished"] = policy.finished
         report["termination_reason"] = env.process.invalid_reason or (

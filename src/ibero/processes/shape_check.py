@@ -47,8 +47,16 @@ class MachiningTarget:
         )
 
 
-def inspect_shape(stock, target):
+def inspect_shape(
+    stock, target, *, volume_error_fraction=0.05, boundary_error_cells=2.0
+):
     """体积不能单独防止偏切：同时核对删除外边界、目标边界覆盖及实际孔列。"""
+    volume_error_fraction = finite_number(
+        volume_error_fraction, "volume_error_fraction"
+    )
+    boundary_error_cells = finite_number(boundary_error_cells, "boundary_error_cells")
+    if volume_error_fraction > 0.05 or boundary_error_cells > 2:
+        raise ValueError("Shape inspection cannot relax frozen maximum criteria")
     size = np.asarray(stock.params.size_m)
     if target.depth_m > size[2] + 1e-12:
         raise ValueError("Target depth exceeds fixed stock")
@@ -103,8 +111,8 @@ def inspect_shape(stock, target):
         boundary = float(np.max(np.abs(distances)))
     else:
         boundary = float(np.linalg.norm(size))
-    # 内部保守点应已删除，外部保守点应存在；用两格窄带容纳体素离散误差。
-    band = 2 * stock.cell_size_m
+    # 内部保守点应已删除，外部保守点应存在；窄带读取菜谱，可比缺省两格更严格。
+    band = boundary_error_cells * stock.cell_size_m
     definitely_inside = (sdf < -band) & (centers[:, 2] > bottom + band)
     definitely_outside = (sdf > band) | (centers[:, 2] < bottom - band)
     coverage = bool(
@@ -129,5 +137,9 @@ def inspect_shape(stock, target):
         "boundary_error_cells": boundary / stock.cell_size_m,
         "interior_coverage": coverage,
         "through_column_open": through,
-        "passed": bool(error <= 0.05 and boundary <= band and coverage and through),
+        "volume_error_limit_fraction": volume_error_fraction,
+        "boundary_error_limit_cells": boundary_error_cells,
+        "passed": bool(
+            error <= volume_error_fraction and boundary <= band and coverage and through
+        ),
     }

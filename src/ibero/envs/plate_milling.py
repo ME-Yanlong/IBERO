@@ -20,7 +20,6 @@ from ibero.materials.parameters import StockParameters, strict_parameters
 from ibero.processes.tools import EndMillGeometry
 from ibero.processes.milling_forces import MillingCoefficients, MillingLimits
 from ibero.processes.milling import MillingProcess
-from ibero.processes.shape_check import inspect_shape
 from ibero.robots.g1_milling import milling_robot_spec, add_plate_support
 from ibero.robots.g1_industrial import solve_reset_pose
 from ibero.robots.g1_upperbody import ARM_JOINTS
@@ -90,7 +89,7 @@ class PlateMillingEnv(MillingFixture):
         )
         self.start = self.stock.local_to_world(cfg["initialization"]["tip_position_m"])
         self.servo_stride = round(1 / r["servo_hz"] / self.model.opt.timestep)
-        inspect_shape(self.stock, self.target)  # 编译后的实体范围必须能容纳声明目标。
+        self.inspect_target(self.target)  # 编译后的实体范围必须能容纳声明目标。
         self.reset(seed=0)
 
     @classmethod
@@ -235,7 +234,7 @@ class PlateMillingEnv(MillingFixture):
         """控制器之外检查实际孔槽；只读快照传给 P4，不把模型交给菜谱修改。"""
         if target != self.target:
             raise ValueError("Task evaluation must use the declared P4 target")
-        shape = inspect_shape(self.stock, target)
+        shape = self.inspect_target(target)
         tip = self.stock.world_to_local(self.data.site("mill_tip").xpos)
         rpm = abs(self.process.kinematics(self.data)[3])
         extra = dict(
