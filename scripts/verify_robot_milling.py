@@ -91,6 +91,7 @@ def main():
     ) == 1 and all(r.get("frozen_source") for r in rows)
     result = dict(
         scope="G8_robot_30_cases_only_viewer_and_other_gates_separate",
+        data_role="development_regression_after_seed_1_was_used_for_diagnosis",
         checks=checks,
         passed=all(checks.values()),
         results=rows,

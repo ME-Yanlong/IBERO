@@ -65,6 +65,8 @@ def assess_budget(workers, snapshot):
 def require_worker_budget(output, workers):
     report = assess_budget(workers, memory_snapshot())
     path = Path(output) / "resource_preflight.json"
+    if path.exists():
+        raise FileExistsError("Refusing to replace existing resource evidence")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
     if not report["passed"]:

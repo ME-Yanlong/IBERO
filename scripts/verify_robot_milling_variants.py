@@ -1,4 +1,4 @@
-"""额外留出：端铣系数 ±10%，各 seed 100—104 完整通孔；非实测材料泛化。"""
+"""系数回归：端铣系数 ±10%，各 seed 100—104 完整通孔；非独立留出或实测泛化。"""
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -109,7 +109,8 @@ def main():
         {(r.get("manifest") or {}).get("source_hash") for r in rows}
     ) == 1 and all(r.get("frozen_source") for r in rows)
     result = dict(
-        scope="held_out_coefficient_sensitivity_not_real_material_generalization",
+        scope="coefficient_regression_sensitivity_not_independent_holdout_or_measured",
+        data_role="development_regression_after_seed_102_was_used_for_diagnosis",
         predefined_scales=[0.9, 1.1],
         seeds=list(range(100, 105)),
         shape="through_hole",
