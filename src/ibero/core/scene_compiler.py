@@ -12,6 +12,8 @@ from ibero.robots.g1_upperbody_2f85 import HandoverModelHandles, build_g1_handov
 from ibero.robots.g1_industrial import IndustrialRobotHandles
 from ibero.mechanisms.snap_latch import LatchNames
 from ibero.materials.harness import HarnessParameters, add_harness
+from ibero.materials.stock import VoxelStock
+from ibero.materials.stock_collision import StockCollisionBinding, add_stock_geoms
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,12 @@ class CompiledHarnessCell(CompiledLatchCell):
     harness_parameters: HarnessParameters
 
 
+@dataclass(frozen=True)
+class CompiledStockFixture(CompiledFixture):
+    stock: VoxelStock
+    binding: StockCollisionBinding
+
+
 def fixture_spec(config):
     """空台架只负责求解时钟、重力和照明；对象由相应 builder 添加。"""
     spec = mujoco.MjSpec()
@@ -63,7 +71,7 @@ class SceneCompiler:
 
     def compile(
         self, scene: ValidatedScene
-    ) -> CompiledScene | CompiledFixture | CompiledLatchCell:
+    ) -> CompiledScene | CompiledFixture | CompiledLatchCell | CompiledStockFixture:
         if scene.config.get("schema_version") == "ibero.industrial/v0.1":
             if scene.config["kind"] in {"latch_release", "harness_unplug"}:
                 from ibero.robots.g1_industrial import robot_spec, robot_handles
@@ -136,6 +144,24 @@ class SceneCompiler:
                 )
                 spec.option.gravity = scene.config["physics"]["gravity_m_s2"]
                 return CompiledFixture(scene, spec.compile())
+            if scene.config["kind"] == "stock_bench":
+                from ibero.materials.parameters import (
+                    StockParameters,
+                    strict_parameters,
+                )
+
+                cfg = scene.config
+                stock = VoxelStock(
+                    strict_parameters(StockParameters, cfg["materials"]["stock"]),
+                    cfg["numerics"]["cell_size_m"],
+                    max_cells=cfg["numerics"]["max_cells"],
+                )
+                spec = fixture_spec(cfg)
+                add_stock_geoms(spec, stock)
+                model = spec.compile()
+                return CompiledStockFixture(
+                    scene, model, stock, StockCollisionBinding(model, stock)
+                )
             if scene.config["kind"] != "empty_bench":
                 raise NotImplementedError(
                     f"Builder not implemented: {scene.config['kind']}"

@@ -96,3 +96,22 @@ def test_external_mask_edit_is_not_a_material_cut():
     env.model.geom_rgba[env.binding.geom_ids[0], 3] = 0
     with pytest.raises(RuntimeError, match="appearance"):
         env.binding.ensure_consistent()
+
+
+def test_stock_recipe_compiles_without_fake_robot_or_cable():
+    from pathlib import Path
+    from dataclasses import replace
+    import copy
+    from ibero.core.scene_loader import SceneLoader
+    from ibero.core.scene_compiler import SceneCompiler
+
+    scene = SceneLoader().validate(
+        Path(__file__).resolve().parents[1] / "scenes/stock_bench"
+    )
+    cfg = copy.deepcopy(scene.config)
+    cfg["materials"]["stock"]["size_m"] = [0.006, 0.006, 0.002]
+    result = SceneCompiler().compile(replace(scene, config=cfg))
+    assert result.model.nv == 0 and result.model.ngeom == 72
+    assert result.stock.volume_m3 == pytest.approx(0.006 * 0.006 * 0.002)
+    assert not hasattr(result, "cable_parameters")
+    result.binding.ensure_consistent()

@@ -39,6 +39,7 @@ class LatchReleaseScript:
         self.phase = "settle"
         self.targets = None
         self.grasp_time = 0.0
+        self.early_release_triggered = False
 
     def action(self, env):
         cfg = env.scene.config["control"]
@@ -63,9 +64,18 @@ class LatchReleaseScript:
         elif self.phase in {"press", "pull"}:
             # 压头过载优先卸载；净空目标只决定运动，不改变锁止几何。
             if self.case != "no_press":
-                if self.case == "early_release" and info["withdrawal_m"] > 0.004:
+                if (
+                    self.case == "early_release"
+                    and self.phase == "pull"
+                    and info["withdrawal_m"] > 0.0001
+                ):
+                    # 4 mm 才松手时扣齿已进入肩部下方，可沿下面合法滑出。
+                    # 真正反事实在 1 mm 初始轴向间隙尚未走完时停拉、撤压，再拉。
+                    self.early_release_triggered = True
+                    self.phase = "early_unload"
+                    self.targets[1] = env.data.site_xpos[sites[1]].copy()
                     self.targets[0][2] = min(
-                        self.initial[0][2], self.targets[0][2] + 0.01 * dt
+                        self.initial[0][2], self.targets[0][2] + 0.03 * dt
                     )
                 else:
                     error = cfg["press_clearance_m"] - info["clearance_m"]
@@ -97,6 +107,20 @@ class LatchReleaseScript:
                     # 扣齿脱开后先停拉并让压头退到扣齿上方；边退压头边拉会撞到回弹扣齿。
                     self.targets[1] = env.data.site_xpos[sites[1]].copy()
                     self.phase = "clear_tool"
+        elif self.phase == "early_unload":
+            self.targets[0][2] = min(self.initial[0][2], self.targets[0][2] + 0.03 * dt)
+            if (
+                env.data.site_xpos[sites[0], 2] >= self.initial[0][2] - 0.001
+                and abs(info["deflection_m"]) < 0.0005
+            ):
+                self.phase = "fault_pull"
+        elif self.phase == "fault_pull":
+            axis = env.data.xmat[env.socket].reshape(3, 3)[:, 0]
+            if (
+                abs(np.dot(info["socket_force_world_n"], axis))
+                < cfg["max_pull_force_n"]
+            ):
+                self.targets[1] -= axis * cfg["pull_speed_m_s"] * dt
         elif self.phase == "clear_tool":
             self.targets[0][2] = min(
                 self.initial[0][2], self.targets[0][2] + 0.012 * dt

@@ -6,7 +6,7 @@ import numpy as np
 from ibero.materials.stock import VoxelStock
 
 
-def add_stock_geoms(spec, stock, *, active_only=False):
+def add_stock_geoms(spec, stock, *, active_only=False, contype=1):
     """active_only 只用于受控重编译比较；正式路径保留稳定的全部 geom ID。
 
     固定工件无运动自由度；代理不再重复携带材料质量。真实剩余质量由 stock
@@ -31,7 +31,7 @@ def add_stock_geoms(spec, stock, *, active_only=False):
             pos=stock.centers[i],
             size=stock.half_sizes[i],
             mass=0,
-            contype=1,
+            contype=contype,
             conaffinity=1,
             solref=[0.001, 1],
             solimp=[0.99, 0.999, 0.00001, 0.5, 2],
