@@ -31,13 +31,18 @@ python scripts/verify_milling_process.py --scene scenes/plate_milling --shape th
 python -m pytest -q tests/test_plate_milling.py
 python -m ibero.demo --env plate_milling --shape through_hole --viewer
 python -m ibero.demo --env plate_milling --shape slot --viewer --no-visual-chips
+python -m ibero.demo --env plate_milling --viewer --render-quality quality
 ```
 
 上述第三条目前是单种子开发检查，不是完整 G8。报告会保存实际失败、材料轨迹、形状截面、独立动态探针，以及保存/加载/回看检查。探针使用真正加工后的占据与世界平移，不从目标生成理想孔；它属于独立检验台架，不冒充机器人在线持探针测量。
 
+默认 `--render-quality fast` 只关闭显示阴影和地板反射；`quality` 可恢复这些效果，不改变材料、接触或物理步长。前三格依次为全景、刀具局部、毛坯检查俯视；第三格只在独立显示副本隐藏机器人/刀具，以免刀具遮住孔洞。第四格为实际占据 XZ 剖面及全回合载荷需求峰值，不把超限拒绝的候选载荷当成已施加外力。C 可关闭纯视觉切屑。
+
+当前验收机的 OpenGL 使用 Intel 核显，虽然设备中也有 RTX 5080 Laptop GPU；不能据设备列表假定已经使用独显。工程性能报告会记录实际 OpenGL renderer、并发负载和各项耗时，项目不自动修改系统显卡偏好。fast 不是物理加速选项；目前完整细步长任务依然明显慢于实时。
+
 ## 尚待闭合
 
-加工专用持久四视图和可关闭视觉切屑已实现，短程真实 GUI 交互及显示隔离检查通过。实际机器人直槽、浅腔、通孔的完整稳定性、跨种子 G8、两次完整成功 GUI、全量最终回归和体验性能仍须证据闭合。台架已通过不代表机器人已通过；截图和控制器走完也不能单独让任务成功。
+加工专用持久四视图和可关闭视觉切屑已实现，短程真实 GUI 交互及显示隔离检查通过。默认机器人通孔与直槽已在冻结检查点完成单次全链通过；浅腔、跨种子 G8、系数变体、两次完整成功 GUI、全量最终回归仍须证据闭合。台架已通过不代表机器人已通过；截图和控制器走完也不能单独让任务成功。具体版本见开发日志 §18，后续源码修改不能冒用旧轨迹身份。
 
 ### 载荷诊断与数值边界
 

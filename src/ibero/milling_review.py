@@ -16,7 +16,10 @@ from ibero.control.milling_bench import MillingBenchScript
 
 
 class MillingViews:
-    def __init__(self, env, *, visual_chips=True):
+    def __init__(self, env, *, visual_chips=True, render_quality="fast"):
+        if render_quality not in {"fast", "quality"}:
+            raise ValueError("render_quality must be fast or quality")
+        self.render_quality = render_quality
         self.model = copy.deepcopy(env.model)
         self.data = mujoco.MjData(self.model)
         self.stock = VoxelStock(
@@ -32,6 +35,16 @@ class MillingViews:
         self.model.geom_conaffinity[ids] = env.binding._initial_affinity
         self.model.geom_rgba[ids] = env.binding._initial_rgba
         self.binding = StockCollisionBinding(self.model, self.stock)
+        # 仅显示副本预留第 5 组给毛坯；俯视隐藏刀具以免退刀后仍遮住整个通孔。
+        # 这不是关闭 live 实体碰撞。全景/局部仍显示真实机器人和刀具。
+        self.model.geom_group[self.model.geom_group == 5] = 4
+        self.model.geom_group[ids] = 5
+        self.full_option = mujoco.MjvOption()
+        self.full_option.geomgroup[5] = 1
+        self.top_option = mujoco.MjvOption()
+        self.top_option.geomgroup[:] = 0
+        self.top_option.geomgroup[5] = 1
+        self.top_option.sitegroup[:] = 0
         self.blade = env.process.blade_geom
         self.blade_body = env.process.blade_body
         self.blade_body_geoms = np.flatnonzero(
@@ -44,7 +57,7 @@ class MillingViews:
         for lookat, distance, azimuth, elevation in (
             ([0.25, 0, 0.85], 1.35, 135, -20),
             (env.stock.origin, 0.085, 135, -25),
-            (env.stock.origin, 0.085, 0, -89),
+            (env.stock.origin, 0.04, 0, -89),
         ):
             camera = mujoco.MjvCamera()
             camera.lookat[:] = lookat
@@ -129,10 +142,21 @@ class MillingViews:
         titles = [
             "G1 工作站 / 右臂安全停放",
             "实际加工局部 / 原生实体孔槽",
-            "工件俯视 / 金色颗粒仅为视觉示意",
+            "工件俯视（仅隐藏显示工具，检查实际孔槽）",
         ]
         for i, camera in enumerate(self.cameras):
-            self.renderer.update_scene(self.data, camera)
+            self.renderer.update_scene(
+                self.data,
+                camera,
+                scene_option=self.top_option if i == 2 else self.full_option,
+            )
+            # fast 只取消阴影/地板反射，不改模型、材料或积分。核显下减少渲染等待。
+            self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = (
+                self.render_quality == "quality"
+            )
+            self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = (
+                self.render_quality == "quality"
+            )
             self._chips()
             tile = Image.fromarray(self.renderer.render().copy())
             draw = ImageDraw.Draw(tile)
@@ -218,11 +242,22 @@ class MillingViews:
 class MillingReviewer(IndustrialReviewer):
     """复用持久窗口事件循环；材料回看只触碰显示副本，不恢复 live 环境。"""
 
-    def __init__(self, env, *, shape="through_hole", visual_chips=True, **kwargs):
+    def __init__(
+        self,
+        env,
+        *,
+        shape="through_hole",
+        visual_chips=True,
+        render_quality="fast",
+        **kwargs,
+    ):
         if shape != env.target.shape:
             raise ValueError("Viewer shape must match environment target identity")
         self.target = env.target
         self.visual_chips = visual_chips
+        if render_quality not in {"fast", "quality"}:
+            raise ValueError("render_quality must be fast or quality")
+        self.render_quality = render_quality
         env.control_dt = 1 / env.scene.config["physics"]["control_hz"]
         env.max_episode_steps = round(
             env.scene.constraints["task"]["max_seconds"] / env.control_dt
@@ -244,7 +279,9 @@ class MillingReviewer(IndustrialReviewer):
     def _bind_model(self):
         if hasattr(self, "views"):
             self.views.close()
-        self.views = MillingViews(self.env, visual_chips=self.visual_chips)
+        self.views = MillingViews(
+            self.env, visual_chips=self.visual_chips, render_quality=self.render_quality
+        )
 
     def _set_view_frame(self):
         self.views.set_frame(self.trace, self.index)

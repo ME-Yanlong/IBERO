@@ -74,6 +74,24 @@ def summarize(paths):
             }
         )
     counts = {}
+    variants = inputs["variants"]
+    checks["coefficient_variants"] = bool(
+        variants["passed"] is True
+        and variants["predefined_scales"] == [0.9, 1.1]
+        and len(variants["results"]) == 10
+        and all(
+            r.get("frozen_source") is True
+            and (r.get("manifest") or {}).get("source_hash") == source
+            for r in variants["results"]
+        )
+    )
+    for label in ("coefficients_090", "coefficients_110"):
+        selected = [r for r in variants["results"] if r["variant"] == label]
+        checks[label] = (
+            len(selected) == 5
+            and {r["seed"] for r in selected} == set(range(100, 105))
+            and sum(r["passed"] is True for r in selected) >= 4
+        )
     checks["exactly_thirty_cases"] = len(rows) == 30
     for shape in ("slot", "pocket", "through_hole"):
         selected = [r for r in rows if r["shape"] == shape]
@@ -107,7 +125,7 @@ def summarize(paths):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ("robot-group", "g7", "preflight", "viewer", "performance"):
+    for name in ("robot-group", "g7", "preflight", "viewer", "performance", "variants"):
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()

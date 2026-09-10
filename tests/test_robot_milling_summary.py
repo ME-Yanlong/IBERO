@@ -66,6 +66,24 @@ def test_g8_summary_keeps_fixed_denominators_and_separate_gui_gate(tmp_path):
             {"passed": True, "source_hash": "same", "frozen_source": True, "events": 2},
         ),
     }
+    paths["variants"] = save(
+        "variants",
+        {
+            "passed": True,
+            "predefined_scales": [0.9, 1.1],
+            "results": [
+                {
+                    "variant": label,
+                    "seed": seed,
+                    "passed": True,
+                    "frozen_source": True,
+                    "manifest": {"source_hash": "same"},
+                }
+                for label in ("coefficients_090", "coefficients_110")
+                for seed in range(100, 105)
+            ],
+        },
+    )
     assert module.summarize(paths)["passed"]  # 仅合成汇总器测试，不是机器人证据。
     viewer["successful_episode_2"] = False
     save("viewer", viewer)

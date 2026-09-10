@@ -119,6 +119,19 @@ def main():
         t = time.perf_counter()
         views = MillingViews(env)
         report["display_clone_and_renderer_seconds"] = time.perf_counter() - t
+        try:
+            from OpenGL import GL
+
+            report["active_opengl"] = {
+                k: GL.glGetString(v).decode()
+                for k, v in (
+                    ("vendor", GL.GL_VENDOR),
+                    ("renderer", GL.GL_RENDERER),
+                    ("version", GL.GL_VERSION),
+                )
+            }
+        except Exception as error:
+            report["active_opengl"] = {"query_error": str(error)}
         restore, render = [], []
         frames = np.linspace(
             0, len(trace.states) - 1, min(30, len(trace.states)), dtype=int

@@ -23,6 +23,7 @@ def run_demo(args):
             save_trace=args.save_trace,
             replay=args.replay,
             visual_chips=not args.no_visual_chips,
+            render_quality=args.render_quality,
         )
         info = app.run()
         trace = app.trace
@@ -59,7 +60,11 @@ def run_demo(args):
         if app:
             frame = app.last_image
         else:
-            views = MillingViews(env, visual_chips=not args.no_visual_chips)
+            views = MillingViews(
+                env,
+                visual_chips=not args.no_visual_chips,
+                render_quality=args.render_quality,
+            )
             try:
                 views.set_frame(trace, len(trace.states) - 1)
                 frame = views.render(trace.infos)

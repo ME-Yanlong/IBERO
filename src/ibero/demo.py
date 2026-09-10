@@ -141,6 +141,12 @@ def main() -> None:
         help="disable nonphysical milling chip illustrations",
     )
     parser.add_argument(
+        "--render-quality",
+        choices=("fast", "quality"),
+        default="fast",
+        help="milling display only: fast disables shadows/reflections, physics unchanged",
+    )
+    parser.add_argument(
         "--seed", type=int, default=7, help="repeatable seed used for every Enter run"
     )
     parser.add_argument(
