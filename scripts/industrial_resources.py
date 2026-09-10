@@ -2,10 +2,31 @@
 
 import ctypes
 import json
+import os
 from pathlib import Path
 import sys
 
 GIB = 1024**3
+
+
+def configure_worker_numeric_threads(environment=None):
+    """只设置新 worker 将继承的缺省线程，不热修改已加载库或覆盖用户选择。"""
+    environment = os.environ if environment is None else environment
+    names = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+    applied = {}
+    explicit = any(name in environment for name in names)
+    # OMP 可能是 BLAS 的回退设置；不能添加更高优先级变量，间接覆盖用户选择。
+    if not explicit:
+        for name in names:
+            environment[name] = applied[name] = "1"
+    return {
+        "scope": "process_environment_defaults_for_future_workers_not_global_OS_settings",
+        "defaults_applied": applied,
+        "explicit_user_configuration_preserved": explicit,
+        "environment": {name: environment.get(name) for name in names},
+        "parent_numpy_already_imported": "numpy" in sys.modules,
+        "existing_loaded_libraries_unchanged": True,
+    }
 
 
 def memory_snapshot():
@@ -67,6 +88,8 @@ def require_worker_budget(output, workers):
     path = Path(output) / "resource_preflight.json"
     if path.exists():
         raise FileExistsError("Refusing to replace existing resource evidence")
+    if report["passed"]:
+        report["numeric_thread_policy"] = configure_worker_numeric_threads()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
     if not report["passed"]:

@@ -5,7 +5,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import platform
 import time
 import shutil
 import yaml
@@ -33,6 +35,18 @@ def run_shape(job):
         "passed": False,
         "rows": [],
         "seed": seed,
+        "execution_environment": {
+            "python_version": platform.python_version(),
+            "numpy_version": np.__version__,
+            "numeric_thread_environment": {
+                name: os.environ.get(name)
+                for name in (
+                    "OPENBLAS_NUM_THREADS",
+                    "OMP_NUM_THREADS",
+                    "MKL_NUM_THREADS",
+                )
+            },
+        },
     }
     env, trace = None, None
     try:

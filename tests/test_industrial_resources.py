@@ -23,3 +23,16 @@ def test_worker_budget_uses_commit_headroom_and_does_not_claim_portable_check():
     for invalid in (0, -1, True, 1.5):
         with pytest.raises(ValueError):
             module.assess_budget(invalid, healthy)
+    environment = {"OPENBLAS_NUM_THREADS": "4", "UNRELATED_OPTION": "untouched"}
+    policy = module.configure_worker_numeric_threads(environment)
+    assert environment["OPENBLAS_NUM_THREADS"] == "4"
+    assert "OMP_NUM_THREADS" not in environment and "MKL_NUM_THREADS" not in environment
+    assert environment["UNRELATED_OPTION"] == "untouched"
+    assert "OPENBLAS_NUM_THREADS" not in policy["defaults_applied"]
+    assert policy["existing_loaded_libraries_unchanged"] is True
+    empty = {}
+    policy = module.configure_worker_numeric_threads(empty)
+    assert set(empty.values()) == {"1"} and len(policy["defaults_applied"]) == 3
+    omp_only = {"OMP_NUM_THREADS": "8"}
+    module.configure_worker_numeric_threads(omp_only)
+    assert omp_only == {"OMP_NUM_THREADS": "8"}
