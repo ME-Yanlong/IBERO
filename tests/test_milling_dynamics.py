@@ -161,3 +161,59 @@ def test_noncutting_housing_retains_contact_when_blade_mask_changes():
     mujoco.mj_forward(e.model, e.data)
     assert e.model.geom_contype[housing] == 1
     assert any(housing in (c.geom1, c.geom2) for c in e.data.contact)
+
+
+def test_milling_replay_restores_blade_mode_as_well_as_voxels(tmp_path):
+    from ibero.core.stock_trace import StockTrace
+
+    e = fixture()
+    trace = StockTrace(e)
+    trace.append(e.last_info)
+    for _ in range(5):
+        info = e.step(e.start, 6000)
+    assert e.model.geom_contype[e.process.blade_geom] == 2
+    trace.append(info)
+    path = tmp_path / "milling.npz"
+    trace.save(path)
+    loaded = StockTrace(e).load(path)
+    assert e.model.geom_contype[e.process.blade_geom] == 1
+    loaded.restore(1)
+    assert e.model.geom_contype[e.process.blade_geom] == 2
+    with pytest.raises(RuntimeError, match="reset"):
+        e.step(e.start, 6000)
+    loaded.restore(0)
+    assert e.model.geom_contype[e.process.blade_geom] == 1
+
+
+def test_rotated_ft_and_equal_opposite_world_wrench():
+    e = fixture()
+    # 传感器局部坐标旋转 90 度，不改变刚体构型；检查轴交换及力矩符号。
+    ft = e.model.site("mill_ft_site").id
+    e.model.site_quat[ft] = [np.sqrt(0.5), 0, 0, np.sqrt(0.5)]
+    mujoco.mj_forward(e.model, e.data)
+    force, torque = np.array([1.0, 2.0, -3.0]), np.array([0.03, -0.02, 0.01])
+    for _ in range(3000):
+        point = e.data.site("mill_tip").xpos.copy() + [0.001, -0.002, 0.003]
+        e.loads.begin(e.data)
+        e.loads.add_wrench(e.data, e.process.tool_body, force, torque, point)
+        e.loads.add_wrench(e.data, e.process.stock_body, -force, -torque, point)
+        e.loads.commit(e.data)
+        np.testing.assert_allclose(
+            e.data.xfrc_applied[:, :3].sum(axis=0), 0, atol=1e-12
+        )
+        net_moment = e.data.xfrc_applied[:, 3:] + np.cross(
+            e.data.xipos, e.data.xfrc_applied[:, :3]
+        )
+        np.testing.assert_allclose(net_moment.sum(axis=0), 0, atol=1e-12)
+        mujoco.mj_step(e.model, e.data)
+        mujoco.mj_forward(e.model, e.data)
+    rotation = e.data.site_xmat[ft].reshape(3, 3)
+    lever = point - e.data.site_xpos[ft]
+    np.testing.assert_allclose(
+        e.data.sensor("mill_force").data, -rotation.T @ force, atol=1e-6
+    )
+    np.testing.assert_allclose(
+        e.data.sensor("mill_torque").data,
+        -rotation.T @ (torque + np.cross(lever, force)),
+        atol=1e-6,
+    )

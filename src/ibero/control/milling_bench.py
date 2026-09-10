@@ -54,7 +54,6 @@ class MillingBenchScript:
         end[2] = safe_z
         self.waypoints.append((end, "retract"))
         self.nominal = env.data.site("mill_tip").xpos.copy()
-        self.offset = np.zeros(3)
         self.index = 0
         self.phase = "spin_up"
         self.finished = False
@@ -78,16 +77,10 @@ class MillingBenchScript:
         self.nominal += (waypoint - self.nominal) * min(
             1, speed * self.dt / max(distance, 1e-12)
         )
-        # 台架已知轴伺服刚度，用过程载荷估计补偿弹性跟踪偏差；绝不裁减实际切削力。
-        desired_offset = (
-            -np.asarray(env.last_info.get("force_world_n", (0, 0, 0))) / 5000
-        )
-        self.offset += min(1, self.dt / 0.05) * (desired_offset - self.offset)
-        if np.linalg.norm(self.offset) > 0.003:
-            raise ValueError("Required fixture compliance compensation exceeds domain")
+        # 保留真实受载跟踪滞后，并等待实际刀尖到位；不以滞后过程力构造正反馈补偿。
         if (
             np.linalg.norm(self.nominal - waypoint) < 1e-10
             and np.linalg.norm(actual - waypoint) < c["tracking_tolerance_m"]
         ):
             self.index += 1
-        return self.nominal + self.offset, c["rpm"]
+        return self.nominal.copy(), c["rpm"]
