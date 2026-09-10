@@ -1,0 +1,5 @@
+safety:
+  max_force_n: 20.0
+  max_deflection_m: 0.01
+task:
+  max_seconds: 5.0

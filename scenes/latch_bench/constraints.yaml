@@ -1,0 +1,6 @@
+# 报警不代表材料真实断裂；超范围时停止有效性判断。
+safety:
+  max_force_n: 5.0
+  max_deflection_m: 0.012
+task:
+  max_seconds: 4.0

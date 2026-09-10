@@ -1,0 +1,28 @@
+schema_version: ibero.industrial/v0.1
+id: latch_bench
+kind: latch_bench
+backend: mujoco
+parameter_status: provisional
+physics:
+  # 0.1 ms 与浅扣合变体的 10 us 曾出现力尖峰；2.5 us 进行完整复验。
+  timestep_s: 0.0000025
+  control_hz: 100
+  gravity_m_s2: [0, 0, 0]
+materials:
+  beam:
+    length_m: 0.06
+    width_m: 0.012
+    thickness_m: 0.002
+    young_pa: 2000000000.0
+    density_kg_m3: 1200.0
+    relaxation_time_s: 0.003
+    parameter_source: provisional rectangular polymer beam; not measured
+mechanism:
+  hook_height_m: 0.006
+  hook_length_m: 0.004
+  overlap_m: 0.003
+  axial_gap_m: 0.001
+  friction: 0.3
+  plug_mass_kg: 0.06
+numerics:
+  segments: 8

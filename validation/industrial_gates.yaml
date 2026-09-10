@@ -1,0 +1,39 @@
+# 冻结于开始调参之前；工程模型门槛，不代表行业标准或真实材料标定。
+version: C01-IND-GATES-1
+baseline_commit: f7d4450cf4430b5fa596b5a4367d61ad90015408
+engine: mujoco-3.8.1
+reference_status: provisional
+old_regression:
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+  stability_passes: 20
+  handover_minimum_passes: 18
+  stretch_variants: [default, softer, heavier]
+  stretch_seeds: [0, 1, 2]
+latch:
+  analytical_stiffness_relative_error: 0.05
+  finest_resolution_relative_change: 0.05
+  released_residual_fraction: 0.02
+  penetration_feature_fraction: 0.1
+  default_minimum_successes: 18
+  default_runs: 20
+  held_out_seed_start: 100
+  held_out_runs_per_variant: 5
+  held_out_minimum_successes: 4
+  counterfactuals: [no_press, partial_press, offset_press, press_pull, early_release, overload]
+stock:
+  volume_relative_error: 0.05
+  boundary_error_cells: 2
+  probe_clearance_cells: 3
+  resolutions_m: [0.002, 0.001, 0.0005]
+milling:
+  analytical_force_relative_error: 0.05
+  steady_load_relative_error: 0.05
+  wrench_transform_force_atol_n: 0.000001
+  wrench_transform_torque_atol_nm: 0.000001
+  shapes: [slot, pocket, through_hole]
+  minimum_successes_per_shape: 9
+  runs_per_shape: 10
+performance:
+  # 独立的体验目标，未提升为物理正确性硬门槛。
+  headless_realtime_factor_target: 0.5
+  paused_ui_response_target_s: 1

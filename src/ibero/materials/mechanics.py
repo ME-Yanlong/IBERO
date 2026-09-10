@@ -46,7 +46,7 @@ class CableMechanics:
         self.indices = self.dofs[:, None] + np.arange(3)
         self.flex_id = f
 
-    def apply(self, data):
+    def apply(self, data, loads=None):
         # mj_step 返回的 xpos 是积分前位置；外加材料力必须由当前 qpos 重算，
         # 否则一子步相位滞后会向弯曲模态注入非物理能量。
         mujoco.mj_kinematics(self.model, data)
@@ -57,7 +57,11 @@ class CableMechanics:
             self.params.bending_stiffness_nm2,
             self.params.length_m / self.params.segments,
         )
-        data.qfrc_applied[self.indices] = force
+        if loads is None:
+            # 保持原有线束入口语义，避免改变已经冻结的基线积分路径。
+            data.qfrc_applied[self.indices] = force
+        else:
+            loads.add_generalized(self.indices, force)
 
     def state(self, data):
         m, p = self.model, self.params

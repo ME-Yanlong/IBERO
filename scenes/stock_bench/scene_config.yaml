@@ -1,0 +1,19 @@
+schema_version: ibero.industrial/v0.1
+id: stock_bench
+kind: stock_bench
+backend: mujoco
+parameter_status: provisional
+physics:
+  timestep_s: 0.0001
+  control_hz: 100
+  gravity_m_s2: [0, 0, -9.81]
+materials:
+  stock:
+    size_m: [0.06, 0.04, 0.01]
+    density_kg_m3: 7850.0
+    material_grade: AISI1045-provisional
+    parameter_source: illustrative stock; no cutting calibration
+mechanism: {}
+numerics:
+  cell_size_m: 0.001
+  max_cells: 200000

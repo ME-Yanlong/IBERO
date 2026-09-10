@@ -1,0 +1,5 @@
+{
+  "source": "Euler-Bernoulli F=3EI*d/L^3; L=0.06 m, b=0.012 m, t=0.002 m, E=2e9 Pa; generated analytical values, not experimental data",
+  "kind": "analytical",
+  "units": {"displacement": "m", "force": "N"}
+}
