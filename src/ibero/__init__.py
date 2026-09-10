@@ -17,6 +17,10 @@ def make(env_id: str, **kwargs) -> CableTensionEnv | CableHandoverEnv:
         from ibero.envs.latch_release import LatchReleaseEnv
 
         return LatchReleaseEnv(**kwargs)
+    if env_id == "ibero/HarnessUnplug-v0":
+        from ibero.envs.harness_unplug import HarnessUnplugEnv
+
+        return HarnessUnplugEnv(**kwargs)
     if env_id == "ibero/CableHandover-v0":
         return CableHandoverEnv(**kwargs)
     if env_id == "ibero/CableStretch-v0":

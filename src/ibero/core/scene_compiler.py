@@ -11,6 +11,7 @@ from ibero.materials.cable import CableParameters
 from ibero.robots.g1_upperbody_2f85 import HandoverModelHandles, build_g1_handover_model
 from ibero.robots.g1_industrial import IndustrialRobotHandles
 from ibero.mechanisms.snap_latch import LatchNames
+from ibero.materials.harness import HarnessParameters, add_harness
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,11 @@ class CompiledLatchCell:
     latch_names: LatchNames
 
 
+@dataclass(frozen=True)
+class CompiledHarnessCell(CompiledLatchCell):
+    harness_parameters: HarnessParameters
+
+
 def fixture_spec(config):
     """空台架只负责求解时钟、重力和照明；对象由相应 builder 添加。"""
     spec = mujoco.MjSpec()
@@ -59,7 +65,7 @@ class SceneCompiler:
         self, scene: ValidatedScene
     ) -> CompiledScene | CompiledFixture | CompiledLatchCell:
         if scene.config.get("schema_version") == "ibero.industrial/v0.1":
-            if scene.config["kind"] == "latch_release":
+            if scene.config["kind"] in {"latch_release", "harness_unplug"}:
                 from ibero.robots.g1_industrial import robot_spec, robot_handles
                 from ibero.mechanisms.snap_latch import add_latch
                 from ibero.materials.parameters import (
@@ -84,6 +90,32 @@ class SceneCompiler:
                     origin=cfg["initialization"]["origin_m"],
                     quaternion=cfg["initialization"]["quaternion_wxyz"],
                 )
+                if cfg["kind"] == "harness_unplug":
+                    params = strict_parameters(
+                        HarnessParameters, cfg["materials"]["cable"]
+                    )
+                    add_harness(
+                        spec,
+                        params,
+                        origin=cfg["initialization"]["origin_m"],
+                        quaternion=cfg["initialization"]["quaternion_wxyz"],
+                        tail_offset_m=cfg["initialization"]["tail_offset_m"],
+                    )
+                    receiver = cfg["workcell"]["receiver"]
+                    spec.worldbody.add_geom(
+                        name="harness_receiver",
+                        type=mujoco.mjtGeom.mjGEOM_BOX,
+                        solref=[0.001, 1],
+                        solimp=[0.99, 0.999, 0.00001, 0.5, 2],
+                        pos=receiver["center_m"],
+                        size=receiver["half_size_m"],
+                        friction=[0.6, 0.005, 0.0001],
+                        rgba=[0.15, 0.45, 0.35, 1],
+                    )
+                    model = spec.compile()
+                    return CompiledHarnessCell(
+                        scene, model, robot_handles(model), names, params
+                    )
                 model = spec.compile()
                 return CompiledLatchCell(scene, model, robot_handles(model), names)
             if scene.config["kind"] == "latch_bench":

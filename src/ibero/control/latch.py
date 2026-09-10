@@ -12,6 +12,17 @@ class LatchArmController(BimanualResolvedRateController):
             )
 
 
+def industrial_policy(env):
+    """只分派当前两条已实现任务链，未知场景明确拒绝。"""
+    if env.scene_kind == "harness_unplug":
+        from ibero.control.harness import HarnessUnplugScript
+
+        return HarnessUnplugScript()
+    if env.scene_kind == "latch_release":
+        return LatchReleaseScript()
+    raise ValueError(f"No industrial baseline for {env.scene_kind}")
+
+
 class LatchReleaseScript:
     """按净空与真实接触反馈运行，不使用控制阶段作为解锁真值。"""
 

@@ -3,12 +3,18 @@
 import json
 from PIL import Image
 from ibero.envs.latch_release import LatchReleaseEnv
-from ibero.control.latch import LatchReleaseScript
+from ibero.control.latch import industrial_policy
 from ibero.review import Trace
 
 
 def run_demo(args):
-    env = LatchReleaseEnv(**({"scene_path": args.scene} if args.scene else {}))
+    if args.env == "harness_unplug":
+        from ibero.envs.harness_unplug import HarnessUnplugEnv
+
+        env_class = HarnessUnplugEnv
+    else:
+        env_class = LatchReleaseEnv
+    env = env_class(**({"scene_path": args.scene} if args.scene else {}))
     app = None
     try:
         if args.viewer:
@@ -26,7 +32,7 @@ def run_demo(args):
             trace = app.trace
         else:
             env.reset(seed=args.seed)
-            policy = LatchReleaseScript()
+            policy = industrial_policy(env)
             trace = Trace(env)
             trace.append(env.last_info)
             info = env.last_info
@@ -69,7 +75,7 @@ def run_demo(args):
                 json.dumps(dict(env.manifest(), final_info=info), indent=2),
                 encoding="utf-8",
             )
-        print("ibero/LatchRelease-v0:", info)
+        print(f"ibero/{env.scene_kind}:", info)
         print("Success:", info.get("success", False))
         if not args.viewer and not info.get("success"):
             raise SystemExit(1)

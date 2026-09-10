@@ -30,9 +30,16 @@ def run_one(job):
         "success": False,
     }
     try:
-        env = LatchReleaseEnv(ROOT / "scenes" / scene)
+        if scene.startswith("harness_unplug"):
+            from ibero.envs.harness_unplug import HarnessUnplugEnv
+            from ibero.control.harness import HarnessUnplugScript
+
+            env = HarnessUnplugEnv(ROOT / "scenes" / scene)
+            policy = HarnessUnplugScript(case)
+        else:
+            env = LatchReleaseEnv(ROOT / "scenes" / scene)
+            policy = LatchReleaseScript(case)
         env.reset(seed=seed)
-        policy = LatchReleaseScript(case)
         trace = Trace(env)
         trace.append(env.last_info)
         report["manifest"] = env.manifest()
@@ -45,8 +52,18 @@ def run_one(job):
                 break
         final = rows[-1]
         report.update(success=final["success"], final=final, trace=rows)
+        gate = yaml.safe_load(
+            (ROOT / "validation/industrial_gates.yaml").read_text(encoding="utf-8")
+        )["latch"]
+        report["metric_checks"] = {
+            "beam_force": final["peak_contact_force_n"]
+            <= env.scene.constraints["safety"]["max_force_n"],
+            "beam_penetration": final["peak_penetration_m"]
+            <= gate["penetration_feature_fraction"]
+            * env.scene.config["mechanism"]["overlap_m"],
+        }
         report["passed"] = (
-            final["success"]
+            (final["success"] and all(report["metric_checks"].values()))
             if case == "normal"
             else (
                 not final["success"]
@@ -87,6 +104,9 @@ def main():
     p.add_argument("--workers", type=int, choices=range(1, 9), default=4)
     p.add_argument("--output", type=Path)
     p.add_argument(
+        "--scene", choices=["latch_release", "harness_unplug"], default="latch_release"
+    )
+    p.add_argument(
         "--group", choices=["all", "default", "variants", "faults"], default="all"
     )
     args = p.parse_args()
@@ -103,21 +123,25 @@ def main():
     source = simulation_source_hash()
     jobs = []
     if args.group in {"all", "default"}:
-        jobs += [("latch_release", s, "normal", str(output)) for s in range(20)]
+        jobs += [(args.scene, s, "normal", str(output)) for s in range(20)]
     if args.group in {"all", "variants"}:
         jobs += [
-            (f"latch_release_{v}", s, "normal", str(output))
+            (f"{args.scene}_{v}", s, "normal", str(output))
             for v in ("thinner", "shallower")
             for s in range(100, 105)
         ]
     if args.group in {"all", "faults"}:
         jobs += [
-            ("latch_release", 0, c, str(output))
+            (args.scene, 0, c, str(output))
             for c in ("no_press", "partial_press", "offset_press", "early_release")
         ]
     report = {
-        "scope": "latch_release_only",
-        "excludes": ["harness_unplug", "stock", "milling"],
+        "scope": args.scene + "_only",
+        "excludes": [
+            s
+            for s in ["latch_release", "harness_unplug", "stock", "milling"]
+            if s != args.scene
+        ],
         "source_hash": source,
         "gate_version": gates["version"],
         "workers": args.workers,
@@ -146,16 +170,16 @@ def main():
     if args.group in {"all", "default"}:
         report["checks"]["default"] = (
             sum(
-                x["success"]
+                x["passed"]
                 for x in r
-                if x["scene"] == "latch_release" and x["case"] == "normal"
+                if x["scene"] == args.scene and x["case"] == "normal"
             )
             >= gate["default_minimum_successes"]
         )
     if args.group in {"all", "variants"}:
         for variant in ("thinner", "shallower"):
             report["checks"][variant] = (
-                sum(x["success"] for x in r if x["scene"] == f"latch_release_{variant}")
+                sum(x["passed"] for x in r if x["scene"] == f"{args.scene}_{variant}")
                 >= gate["held_out_minimum_successes"]
             )
     if args.group in {"all", "faults"}:

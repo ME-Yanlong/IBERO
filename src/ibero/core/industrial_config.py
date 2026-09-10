@@ -9,6 +9,7 @@ from ibero.materials.parameters import (
     finite_number,
     strict_parameters,
 )
+from ibero.materials.harness import HarnessParameters
 
 SCHEMA = "ibero.industrial/v0.1"
 
@@ -19,7 +20,8 @@ def exact(mapping, keys, path):
 
 
 def validate_industrial(config, constraints):
-    robot_scene = config.get("kind") == "latch_release"
+    robot_scene = config.get("kind") in {"latch_release", "harness_unplug"}
+    harness = config.get("kind") == "harness_unplug"
     exact(
         config,
         {
@@ -33,7 +35,8 @@ def validate_industrial(config, constraints):
             "numerics",
             "parameter_status",
         }
-        | ({"robot", "initialization", "control"} if robot_scene else set()),
+        | ({"robot", "initialization", "control"} if robot_scene else set())
+        | ({"workcell"} if harness else set()),
         "scene",
     )
     if config["schema_version"] != SCHEMA or config["backend"] != "mujoco":
@@ -45,6 +48,7 @@ def validate_industrial(config, constraints):
         "latch_bench",
         "stock_bench",
         "latch_release",
+        "harness_unplug",
     }:
         raise ValueError("Unsupported industrial scene kind")
     if not isinstance(config["id"], str) or not config["id"].strip():
@@ -77,7 +81,8 @@ def validate_industrial(config, constraints):
             {"self_collision_penetration_m", "grip_penetration_m"}
             if robot_scene
             else set()
-        ),
+        )
+        | ({"cable_tension_limit_n", "cable_penetration_m"} if harness else set()),
         "safety",
     )
     for key, value in constraints["safety"].items():
@@ -89,14 +94,19 @@ def validate_industrial(config, constraints):
             {"withdrawal_distance_m", "hold_seconds", "pose_tolerance_rad"}
             if robot_scene
             else set()
-        ),
+        )
+        | ({"placement_speed_limit_m_s"} if harness else set()),
         "task",
     )
     for key, value in constraints["task"].items():
         finite_number(value, key)
     kind = config["kind"]
-    if kind in {"latch_bench", "latch_release"}:
-        exact(config["materials"], {"beam"}, "materials")
+    if kind in {"latch_bench", "latch_release", "harness_unplug"}:
+        exact(
+            config["materials"],
+            {"beam"} | ({"cable"} if harness else set()),
+            "materials",
+        )
         beam = strict_parameters(BeamParameters, config["materials"]["beam"])
         latch = strict_parameters(LatchParameters, config["mechanism"])
         exact(config["numerics"], {"segments"}, "numerics")
@@ -130,6 +140,8 @@ def validate_industrial(config, constraints):
             exact(config[key], set(), key)
     if robot_scene:
         validate_latch_robot(config, constraints)
+    if harness:
+        validate_harness(config)
 
 
 def vector(value, n, name):
@@ -165,7 +177,8 @@ def validate_latch_robot(config, constraints):
     init = config["initialization"]
     exact(
         init,
-        {"origin_m", "quaternion_wxyz", "origin_jitter_m", "friction_jitter"},
+        {"origin_m", "quaternion_wxyz", "origin_jitter_m", "friction_jitter"}
+        | ({"tail_offset_m"} if config["kind"] == "harness_unplug" else set()),
         "initialization",
     )
     for key in ("origin_m", "origin_jitter_m"):
@@ -202,3 +215,40 @@ def validate_latch_robot(config, constraints):
         raise ValueError("Controller cannot exceed declared force/grip bounds")
     if constraints["task"]["withdrawal_distance_m"] < 0.07:
         raise ValueError("Full withdrawal must clear the 65 mm guide keel")
+
+
+def validate_harness(config):
+    cable = strict_parameters(HarnessParameters, config["materials"]["cable"])
+    tail = config["initialization"]["tail_offset_m"]
+    vector(tail, 3, "tail_offset_m")
+    if not 0 < math.sqrt(sum(v * v for v in tail)) < cable.length_m:
+        raise ValueError(
+            "Harness must initialize with a slack span shorter than arc length"
+        )
+    exact(config["workcell"], {"receiver"}, "workcell")
+    receiver = config["workcell"]["receiver"]
+    exact(
+        receiver,
+        {"center_m", "half_size_m", "lowering_m", "lowering_speed_m_s"},
+        "receiver",
+    )
+    for key in ("center_m", "half_size_m"):
+        vector(receiver[key], 3, key)
+    if any(v <= 0 for v in receiver["half_size_m"]):
+        raise ValueError("Receiver dimensions must be positive")
+    for key in ("lowering_m", "lowering_speed_m_s"):
+        finite_number(receiver[key], key)
+    # 同一轴向/阻尼及弯曲稳定性筛查，细步长不豁免非法离散。
+    mass = cable.linear_density_kg_m * cable.length_m / (cable.segments + 1)
+    bound = min(
+        0.5 * math.sqrt(mass / (cable.segments * cable.axial_stiffness_n_m)),
+        0.5 * mass / (cable.segments * cable.damping),
+        0.5
+        * math.sqrt(
+            mass
+            * (cable.length_m / cable.segments) ** 3
+            / (16 * cable.bending_stiffness_nm2)
+        ),
+    )
+    if config["physics"]["timestep_s"] > bound:
+        raise ValueError("Timestep exceeds harness screening bound")

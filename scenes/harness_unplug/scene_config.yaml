@@ -1,0 +1,69 @@
+schema_version: ibero.industrial/v0.1
+id: harness_unplug
+kind: harness_unplug
+backend: mujoco
+parameter_status: provisional
+physics:
+  timestep_s: 0.0000025
+  control_hz: 100
+  gravity_m_s2: [0, 0, -9.81]
+materials:
+  beam:
+    length_m: 0.06
+    width_m: 0.012
+    thickness_m: 0.002
+    young_pa: 2000000000.0
+    density_kg_m3: 1200.0
+    relaxation_time_s: 0.003
+    parameter_source: provisional rectangular polymer beam; not measured
+  cable:
+    # 无扭转中心线 Flex，与舌片的刚体弹性梁是两个物理组件。
+    # 端头质量仅由下面 mechanism 拥有，不重复创建旧场景的长连接器。
+    length_m: 0.30
+    outer_diameter_m: 0.004
+    linear_density_kg_m: 0.03
+    minimum_bend_radius_m: 0.02
+    axial_stiffness_n_m: 250.0
+    bending_stiffness_nm2: 0.0001
+    damping: 0.008
+    friction: 0.6
+    segments: 12
+    source: provisional
+mechanism:
+  hook_height_m: 0.006
+  hook_length_m: 0.004
+  overlap_m: 0.003
+  axial_gap_m: 0.001
+  friction: 0.3
+  plug_mass_kg: 0.06
+numerics:
+  segments: 8
+robot:
+  preset: g1_upperbody_v0
+  left_tool: press_probe
+  right_tool: robotiq_2f85
+  press_tcp_offset_m: [0.21, -0.06, 0]
+  press_stem_height_m: 0.035
+  arm_qpos: [-0.4696653478, 0.1480567558, -0.4091856842, 0.5957613957, -0.3352425581, -0.2216617468, 0.3704244701, -0.5299340992, 0.0325193249, 0.3605278197, 0.9340626702, 0.1998618952, -0.4490535980, -0.1869254598]
+initialization:
+  origin_m: [0.48, 0, 0.87]
+  quaternion_wxyz: [0.7071067811865476, 0, 0, 0.7071067811865476]
+  origin_jitter_m: [0.0001, 0.0001, 0.0001]
+  friction_jitter: 0.015
+  tail_offset_m: [0.25, -0.12, 0]
+control:
+  settle_seconds: 0.7
+  grasp_seconds: 0.6
+  press_speed_m_s: 0.006
+  pull_speed_m_s: 0.02
+  press_clearance_m: 0.0012
+  max_press_travel_m: 0.019
+  max_pull_force_n: 3.0
+  grip_command: 1.0
+workcell:
+  receiver:
+    center_m: [0.53, -0.07, 0.77]
+    half_size_m: [0.08, 0.10, 0.005]
+    # 初版是接料盘投放，不宣称无落差精密装配；落差和冲击仍实际计算。
+    lowering_m: 0.02
+    lowering_speed_m_s: 0.015

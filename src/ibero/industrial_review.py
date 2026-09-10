@@ -7,7 +7,7 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from ibero.review import Trace
-from ibero.control.latch import LatchReleaseScript
+from ibero.control.latch import industrial_policy
 
 
 class IndustrialViews:
@@ -58,6 +58,8 @@ class IndustrialViews:
             f"舌片峰值接触 {last.get('peak_contact_force_n', 0):.3f} N",
             f"失败 {last.get('failure_reason') or last.get('invalid_reason') or '无'}",
         ]
+        if "cable_tension_n" in last:
+            lines[3] += f" / 线张力 {last['cable_tension_n']:.3f} N"
         for i, line in enumerate(lines):
             draw.text((x0 + 10, y0 + 8 + i * 25), line, font=self.font, fill="white")
         rows = infos[-500:]
@@ -152,8 +154,10 @@ class IndustrialReviewer:
         self.completed_episodes = 0
         self.started = time.monotonic()
         self.last_replay_tick = 0
+        self.next_live_tick = 0.0
+        self.physics_wall_seconds = 0.0
         env.reset(seed=seed)
-        self.policy = LatchReleaseScript()
+        self.policy = industrial_policy(self.env)
         self.trace = Trace(env)
         self.trace.append(env.last_info)
         if replay:
@@ -173,13 +177,16 @@ class IndustrialReviewer:
 
     def _reset(self):
         self.env.reset(seed=self.seed)
-        self.policy = LatchReleaseScript()
+        self.policy = industrial_policy(self.env)
         self.trace = Trace(self.env)
         self.trace.append(self.env.last_info)
+        self.physics_wall_seconds = 0.0
         return "reset"
 
     def _step(self):
+        started = time.monotonic()
         _, _, term, trunc, info = self.env.step(self.policy.action(self.env))
+        self.physics_wall_seconds += time.monotonic() - started
         info["controller_phase"] = self.policy.phase
         self.trace.append(info)
         return (
@@ -256,8 +263,12 @@ class IndustrialReviewer:
                     and not self.history
                     and not self.env._done
                     and not self.finished
+                    and (self.single or time.monotonic() >= self.next_live_tick)
                 ):
                     self.single = False
+                    self.next_live_tick = (
+                        time.monotonic() + self.env.control_dt / self.rate
+                    )
                     self.future = self.pool.submit(self._step)
                 elif (
                     self.replaying
@@ -290,9 +301,13 @@ class IndustrialReviewer:
             if self.running
             else "等待 / 暂停 / 已结束"
         )
-        factor = float(self.env.data.time) / max(time.monotonic() - self.started, 1e-9)
+        factor = (
+            float(self.env.data.time) / max(self.physics_wall_seconds, 1e-9)
+            if self.physics_wall_seconds
+            else 0.0
+        )
         self.status.set(
-            f"{state} | t={info.get('time_s', 0):.3f} s | 帧 {self.index}/{len(self.trace.states) - 1} | 实际实时因子 {factor:.3f} | 成功 {info.get('success', False)}"
+            f"{state} | t={info.get('time_s', 0):.3f} s | 帧 {self.index}/{len(self.trace.states) - 1} | 积分实时因子（不含暂停/渲染）{factor:.3f} | 成功 {info.get('success', False)}"
         )
 
     def _drag_start(self, event):

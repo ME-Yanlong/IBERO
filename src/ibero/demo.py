@@ -117,7 +117,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--env",
-        choices=("cable_tension", "cable_handover", "cable_stretch", "latch_release"),
+        choices=(
+            "cable_tension",
+            "cable_handover",
+            "cable_stretch",
+            "latch_release",
+            "harness_unplug",
+        ),
         default="cable_stretch",
         help="which scripted scene to run",
     )
@@ -139,13 +145,13 @@ def main() -> None:
     parser.add_argument(
         "--scene",
         type=Path,
-        help="override the cable_handover scene directory (its YAML remains the source of truth)",
+        help="override the selected environment's scene directory (YAML is the source of truth)",
     )
     parser.add_argument("--save-frame", type=Path, help="write the final rendered PNG")
     parser.add_argument(
         "--save-multiview",
         type=Path,
-        help="write the final cable_handover 2x2 review PNG",
+        help="write the final 2x2 review PNG",
     )
     parser.add_argument(
         "--save-manifest", type=Path, help="write Core-0.1 rollout metadata JSON"
@@ -162,14 +168,24 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.steps is None:
-        args.steps = 1500 if args.env == "latch_release" else 600
+        args.steps = (
+            2000
+            if args.env == "harness_unplug"
+            else 1500
+            if args.env == "latch_release"
+            else 600
+        )
     if (
         args.steps <= 0
         or not np.isfinite(args.playback_rate)
         or args.playback_rate <= 0
     ):
         parser.error("--steps and --playback-rate must be finite and positive")
-    if args.env == "latch_release":
+    if args.env in {"latch_release", "harness_unplug"}:
+        if args.viewer and args.no_dashboard:
+            parser.error(
+                "Industrial reviewer currently uses one integrated four-view window; omit --no-dashboard"
+            )
         if args.replay and not args.viewer:
             parser.error("--replay requires --viewer")
         from ibero.industrial_demo import run_demo

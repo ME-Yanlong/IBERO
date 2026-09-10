@@ -24,11 +24,12 @@ DEFAULT_SCENE = Path(__file__).resolve().parents[3] / "scenes/latch_release"
 
 class LatchReleaseEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
+    scene_kind = "latch_release"
 
     def __init__(self, scene_path=DEFAULT_SCENE, render_mode=None):
         self.scene = SceneLoader().validate(scene_path)
-        if self.scene.config["kind"] != "latch_release":
-            raise ValueError("Expected latch_release recipe")
+        if self.scene.config["kind"] != self.scene_kind:
+            raise ValueError(f"Expected {self.scene_kind} recipe")
         self.render_mode = render_mode
         self.control_dt = 1 / self.scene.config["physics"]["control_hz"]
         self.max_episode_steps = round(
@@ -119,6 +120,7 @@ class LatchReleaseEnv(gym.Env):
         self._done = False
         self._review_only = False
         self._replay_restored = False
+        self._reset_materials(cell)
         self.task.reset()
         self.last_state = self.observer.observe(self.data)
         self._measure_contacts()
@@ -135,11 +137,18 @@ class LatchReleaseEnv(gym.Env):
         for i in range(self.data.ncon):
             c = self.data.contact[i]
             a, b = int(c.geom1), int(c.geom2)
-            self.contact_pairs.add((self.model.geom(a).name, self.model.geom(b).name))
+            # Flex 接触的 geom id 为 -1，不能负索引到最后一个刚体 geom。
+            names = [
+                self.model.geom(g).name
+                if g >= 0
+                else f"flex:{mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_FLEX, int(c.flex[j]))}"
+                for j, g in enumerate((a, b))
+            ]
+            self.contact_pairs.add(tuple(names))
             mujoco.mj_contactForce(self.model, self.data, i, force)
             self.contact_details.append(
                 {
-                    "pair": [self.model.geom(a).name, self.model.geom(b).name],
+                    "pair": names,
                     "force_n": float(np.linalg.norm(force[:3])),
                     "penetration_m": max(0, -float(c.dist)),
                 }
@@ -159,7 +168,9 @@ class LatchReleaseEnv(gym.Env):
                     > self.scene.constraints["safety"]["self_collision_penetration_m"]
                 ):
                     self.invalid_reason = "robot_self_collision"
-            body_a, body_b = self.model.geom_bodyid[[a, b]]
+            body_a, body_b = [
+                int(self.model.geom_bodyid[g]) if g >= 0 else -1 for g in (a, b)
+            ]
             world = c.frame.reshape(3, 3).T @ force[:3]
             if body_a == self.socket:
                 self.socket_force_world -= world
@@ -172,6 +183,7 @@ class LatchReleaseEnv(gym.Env):
             raise RuntimeError("Reset before stepping a finished/replayed episode")
         self.controller.apply(self.data, action)
         for _ in range(round(self.control_dt / self.model.opt.timestep)):
+            self._before_substep()
             mujoco.mj_step(self.model, self.data)
             # 接触力、xpos 均对应本子步积分前状态；标记正确时刻，避免重复求解。
             self.last_state = self.observer.observe(
@@ -181,14 +193,23 @@ class LatchReleaseEnv(gym.Env):
             pairs = self.data.contact.geom
             if len(pairs):
                 a, b = pairs.T
+                valid_a, valid_b = a >= 0, b >= 0
+                a, b = np.maximum(a, 0), np.maximum(b, 0)
                 penetration = -self.data.contact.dist
                 forbidden = (
                     self._robot_mask[a]
                     & self._robot_mask[b]
+                    & valid_a
+                    & valid_b
                     & ~(self._gripper_mask[a] & self._gripper_mask[b])
                 )
-                grip = (self._pad_mask[a] & (b == self.shell)) | (
-                    self._pad_mask[b] & (a == self.shell)
+                grip = (
+                    (
+                        (self._pad_mask[a] & (b == self.shell))
+                        | (self._pad_mask[b] & (a == self.shell))
+                    )
+                    & valid_a
+                    & valid_b
                 )
                 if np.any(
                     forbidden
@@ -210,6 +231,7 @@ class LatchReleaseEnv(gym.Env):
                     self.invalid_reason = "grip_penetration"
             if self.observer.invalid_reason:
                 self.invalid_reason = self.observer.invalid_reason
+            self._after_substep()
             if self.invalid_reason:
                 break
         self.elapsed_steps += 1
@@ -218,6 +240,7 @@ class LatchReleaseEnv(gym.Env):
         if self.observer.invalid_reason:
             self.invalid_reason = self.observer.invalid_reason
         self._measure_contacts()
+        self._after_substep()
         if self.invalid_reason and not self.events:
             self.events.append(
                 {"time_s": float(self.data.time), "type": self.invalid_reason}
@@ -264,6 +287,7 @@ class LatchReleaseEnv(gym.Env):
             pose_tolerance_rad=task["pose_tolerance_rad"],
             control_dt=self.control_dt,
         )
+        extra.update(self._material_task_state())
         return TaskState(
             {"plug": self.data.xpos[self.plug].copy()},
             {},
@@ -287,6 +311,19 @@ class LatchReleaseEnv(gym.Env):
                 ]
             ),
         }
+
+    # 小范围组合点只用于当前真实线束对象；不建立任意多引擎生命周期框架。
+    def _reset_materials(self, cell):
+        pass
+
+    def _before_substep(self):
+        pass
+
+    def _after_substep(self):
+        pass
+
+    def _material_task_state(self):
+        return {}
 
     def _info(self):
         return dict(
