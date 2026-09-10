@@ -1,4 +1,4 @@
-"""S7 三形状过程台架检查；不是 S8 机器人验收，失败保留且返回非零。"""
+"""实际三形状检查：每例明确是 S7 台架还是 S8 机器人，单例不等于全组通过。"""
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -48,6 +48,9 @@ def run_shape(job):
             env = MillingFixture.from_scene(scene_root)
         env.reset(seed=seed)
         report["manifest"] = env.manifest()
+        # 报告自带实际解析菜谱；不能只记录不可逆 hash 而让审阅者猜当时的步长/进给。
+        report["scene_config"] = env.scene.config
+        report["constraints"] = env.scene.constraints
         target = env.target if robot else bench_target(shape)
         report["target"] = asdict(target)
         policy = MillingBenchScript(env, target)
@@ -154,14 +157,29 @@ def run_shape(job):
         if env is not None:
             report["sim_seconds"] = float(env.data.time)
             report["real_time_factor"] = float(env.data.time) / report["wall_seconds"]
-            section_image(env.stock, out / "sections.png")
+            # 截图/轨迹写出失败不能抹掉此前物理异常及逐帧记录；交付证据不全仍失败。
+            try:
+                section_image(env.stock, out / "sections.png")
+            except Exception as error:
+                report.setdefault("artifact_errors", []).append(
+                    f"section: {type(error).__name__}: {error}"
+                )
             if trace is not None:
-                trace.save(out / "trace.npz")
+                try:
+                    trace.save(out / "trace.npz")
+                except Exception as error:
+                    report.setdefault("artifact_errors", []).append(
+                        f"trace: {type(error).__name__}: {error}"
+                    )
         simulation_source_hash.cache_clear()
         report["frozen_source"] = (
             report.get("manifest", {}).get("source_hash") == simulation_source_hash()
         )
-        report["passed"] = report["passed"] and report["frozen_source"]
+        report["passed"] = bool(
+            report["passed"]
+            and report["frozen_source"]
+            and not report.get("artifact_errors")
+        )
         (out / "report.json").write_text(
             json.dumps(report, indent=2, allow_nan=False), encoding="utf-8"
         )
@@ -238,12 +256,20 @@ def main():
     rows = []
     print("Evidence", output, flush=True)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        jobs = [
-            pool.submit(run_shape, (s, str(output), str(args.scene), args.seed))
+        jobs = {
+            pool.submit(run_shape, (s, str(output), str(args.scene), args.seed)): s
             for s in names
-        ]
+        }
         for future in as_completed(jobs):
-            row = future.result()
+            try:
+                row = future.result()
+            except Exception as error:
+                row = dict(
+                    shape=jobs[future],
+                    seed=args.seed,
+                    passed=False,
+                    exception=f"worker: {type(error).__name__}: {error}",
+                )
             rows.append(row)
             print(
                 row["shape"], "passed", row["passed"], row.get("exception"), flush=True
