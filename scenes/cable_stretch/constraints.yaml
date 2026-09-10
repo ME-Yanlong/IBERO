@@ -1,0 +1,9 @@
+cable:
+  tension_limit_n: 8.0
+  limit_duration_s: 0.04
+task:
+  grasp_window_m: 0.035
+  target_radius_m: 0.03
+  release_opening_m: 0.055
+collision:
+  allowed_robot_pairs: []

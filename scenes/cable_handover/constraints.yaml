@@ -1,0 +1,11 @@
+cable:
+  tension_limit_n: 35.0
+  limit_duration_s: 0.040
+task:
+  grasp_window_m: 0.040
+  target_radius_m: 0.04
+  release_opening_m: 0.055
+collision:
+  # Core reports every left/right robot contact except pairs documented here.
+  # No inter-arm pair is allowed for this first workcell configuration.
+  allowed_robot_pairs: []

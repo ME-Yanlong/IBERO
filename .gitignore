@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+artifacts/
+*.mp4
+*.png
+MUJOCO_LOG.TXT
+
+# Third-party source checkouts are optional; vendored model snapshots stay tracked.
+third_party/mujoco_menagerie/

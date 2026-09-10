@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ibero"
+version = "0.1.0"
+description = "Industrial Bimanual Embodied Robotic Operations benchmark core"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "gymnasium==1.2.3",
+  "mujoco==3.8.1",
+  "numpy>=2.0,<3.0",
+  "Pillow==11.3.0",
+  "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.2"]
+
+[project.scripts]
+ibero-demo = "ibero.demo:main"
+ibero-check-scene = "ibero.check_scene:main"
+ibero-calibrate = "ibero.calibrate:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

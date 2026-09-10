@@ -1,0 +1,65 @@
+schema_version: ibero.scene/v0.1
+id: cable_stretch
+suite: harness
+backend: mujoco
+robot:
+  preset: g1_upperbody_v0
+  end_effector: {type: robotiq_2f85}
+  # 左右臂肘部弯曲，双末端朝前，指垫沿竖直方向闭合。
+  arm_qpos: [-0.6, 0.15, 0, 1.2, 0, -0.6, 0, -0.6, -0.15, 0, 1.2, 0, -0.6, 0]
+physics:
+  timestep_s: 0.0002
+  control_hz: 20
+  max_episode_steps: 400
+materials:
+  cable:
+    representation: flex
+    end_layout: dual_end
+    # 弧长大于两端间距，初始线束自然松弛。
+    length_m: 0.26
+    initial_span_m: 0.30438
+    outer_diameter_m: 0.010
+    linear_density_kg_m: 0.055
+    minimum_bend_radius_m: 0.025
+    terminal: {length_m: 0.080, width_m: 0.024, height_m: 0.018, mass_kg: 0.035}
+    axial_stiffness_n_m: 180.0
+    bending_stiffness_nm2: 0.0002
+    # 全长等效轴向粘性阻尼（N s/m）；每段按串联关系乘段数。
+    damping: 0.05
+    friction: 1.15
+    segments: 12
+    parameter_source:
+      length_m: provisional
+      outer_diameter_m: provisional
+      linear_density_kg_m: provisional
+      minimum_bend_radius_m: provisional_alarm
+      terminal: provisional_fixture
+      axial_stiffness_n_m: provisional
+      bending_stiffness_nm2: provisional_centerline_model
+      damping: provisional
+      friction: provisional
+initialization:
+  seed_range: [0, 9999]
+  terminal_pose: [0.49800, 0.15219, 0.85213]
+  tail_direction: [0, -1, 0]
+  target_region: [0.498, 0, 0.85213]
+  target_jitter_m: [0, 0, 0]
+sensors:
+  required: [left_wrist_ft, right_wrist_ft, cable_tension, safety_events]
+render:
+  cameras: [front, left_wrist, right_wrist]
+control:
+  target_tension_n: 2.0
+  tension_tolerance_n: 0.4
+  hold_seconds: 2.0
+  # 导纳速度 = gain * 张力误差，双臂各承担一半距离变化。
+  admittance_m_ns: 0.008
+  max_speed_m_s: 0.025
+  filter_time_s: 0.15
+  warning_tension_n: 5.0
+  recovery_tension_n: 3.0
+  # 扰动是显式、可复现的实验外力；施加于线束中间节点，不改物体姿态。
+  disturbance_time_s: 4.0
+  disturbance_duration_s: 0.4
+  disturbance_force_n: [0, 0, -0.6]
+  disturbance_jitter_fraction: 0.1

@@ -1,0 +1,67 @@
+schema_version: ibero.scene/v0.1
+id: cable_handover
+suite: harness
+backend: mujoco
+robot:
+  # 末端执行器是菜谱可选项。robotiq_2f85 会先移除 G1 资产附带的
+  # 固定手部外观，避免“原生手 + 外接夹爪”重叠。g1_native_hand 只保留
+  # 当前资产中的静态手部几何，尚不具备灵巧手关节与本任务的抓取接口。
+  preset: g1_upperbody_v0
+  # 肘部弯曲的准备位姿避开伸直臂奇异点；顺序见 ARM_JOINTS。
+  arm_qpos: [-0.6, 0, 0, 1.2, 0, -0.6, 0, -0.6, -0.4, 0, 1.2, 0, -0.6, 0]
+  end_effector:
+    type: robotiq_2f85
+physics:
+  # 5000 Hz 物理积分、20 Hz 控制；二者必须整除，避免每个控制周期的
+  # 子步数漂移，影响接触与 Flex 回归的可重复性。
+  timestep_s: 0.0002
+  control_hz: 20
+  max_episode_steps: 600
+materials:
+  cable:
+    # 这组物理量必须由场景而不是 P3 代码常量拥有；字段齐全时选用实际
+    # MuJoCo Flex；旧 capsule_chain 别名已禁用，避免混淆独立实现。
+    representation: flex
+    length_m: 0.48
+    outer_diameter_m: 0.010
+    linear_density_kg_m: 0.055
+    minimum_bend_radius_m: 0.045
+    terminal:
+      # 较长端头提供两个分离夹持区，让首任务先验证真实接触 handover，
+      # 不把“夹持裸线束”的不确定性混入首个回归任务。
+      length_m: 0.36
+      width_m: 0.030
+      height_m: 0.030
+      mass_kg: 0.060
+    axial_stiffness_n_m: 850.0
+    bending_stiffness_nm2: 0.002
+    # 全长等效轴向阻尼 N·s/m；每段使用 n*c。原来 2.0 的代理值不适用于轻质节点。
+    damping: 0.015
+    friction: 1.15
+    segments: 12
+    parameter_source:
+      length_m: provisional
+      outer_diameter_m: provisional
+      linear_density_kg_m: provisional
+      minimum_bend_radius_m: provisional
+      terminal: provisional_fixture
+      axial_stiffness_n_m: provisional
+      bending_stiffness_nm2: provisional
+      damping: provisional
+      friction: provisional
+initialization:
+  seed_range: [0, 9999]
+  # reset 时左 2F-85 闭合于绿色夹持区；右夹爪先到黄色区域，再由左手释放。
+  terminal_pose: [0.49066, -0.05182, 0.84349]
+  tail_direction: [0.0, -1.0, 0.0]
+  target_region: [0.43, -0.09, 0.70]
+  target_jitter_m: [0.010, 0.010, 0.004]
+sensors:
+  required: [left_wrist_ft, right_wrist_ft, cable_tension, safety_events]
+render:
+  cameras: [front, left_wrist, right_wrist]
+workcell:
+  # 支撑面与端头接触，夹爪释放后必须在此稳定停留。
+  receiver:
+    offset_m: [0, 0, -0.021]
+    half_size_m: [0.09, 0.19, 0.006]
