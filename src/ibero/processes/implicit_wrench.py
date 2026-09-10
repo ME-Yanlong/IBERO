@@ -12,7 +12,10 @@ class ImplicitWrenchCoupling:
     接触/强非线性使该局部响应失效时拒绝本步，不隐藏失败继续删除材料。
     """
 
-    def __init__(self, model, *, tool_body, tip_site, spindle_dof):
+    def __init__(self, model, *, tool_body, tip_site, spindle_dof, max_iterations=40):
+        if type(max_iterations) is not int or not 1 <= max_iterations <= 160:
+            raise ValueError("Implicit iteration budget must be an integer in [1, 160]")
+        self.max_iterations = max_iterations
         self.model = model
         self.body, self.site, self.spindle_dof = tool_body, tip_site, spindle_dof
         self.scratch = mujoco.MjData(model)
@@ -100,7 +103,15 @@ class ImplicitWrenchCoupling:
                 full_residual(current) * scale
             ) < np.linalg.norm(full_residual(u) * scale):
                 u = current
-            u = self._iterate(full_residual, u, scale, free)
+            try:
+                u = self._iterate(full_residual, u, scale, free)
+            finally:
+                # 失败也记录真实非线性分支，避免只留下一个不知来自哪一阶段的残差。
+                self.last_diagnostics.update(
+                    method="full_nonlinear_physics",
+                    linear_error=linear_error,
+                    linear_failure=linear_failure,
+                )
             wrench = wrench_at_velocity(u)
             actual = self._trial(data, base_generalized, base_body, point, wrench)
             error = float(np.linalg.norm((actual - u) * scale))
@@ -120,7 +131,8 @@ class ImplicitWrenchCoupling:
 
     def _iterate(self, residual, u, scale, free):
         """同一有界半光滑 Newton；可用于仿射初猜，也可用于真实受约束动力学。"""
-        for iteration in range(40):
+        # 迭代次数有上限；增加预算不是放宽根残差或实际动力学复验精度。
+        for iteration in range(self.max_iterations):
             r = residual(u)
             self.last_diagnostics = {
                 "iterations": iteration,
@@ -151,6 +163,8 @@ class ImplicitWrenchCoupling:
             # 端面只抗向下运动，零轴向速度处是物理分段条件；尝试单侧广义导数，
             # 不用一条跨越启停面的中心差分把求解卡在边界。方程/变量同时按单位缩放。
             accepted = False
+            initial_norm = float(np.linalg.norm(r * scale))
+            best_norm, best_u = initial_norm, u
             for derivative in (jac, forward, backward):
                 normalized = derivative * scale[:, None] / scale[None, :]
                 try:
@@ -159,15 +173,25 @@ class ImplicitWrenchCoupling:
                     continue
                 for factor in (2.0 ** (-i) for i in range(24)):
                     candidate = u + factor * delta
-                    if candidate[3] > 1 and np.linalg.norm(
-                        residual(candidate) * scale
-                    ) < np.linalg.norm(r * scale):
-                        u, accepted = candidate, True
-                        break
-                if accepted:
+                    if candidate[3] > 1:
+                        candidate_norm = float(
+                            np.linalg.norm(residual(candidate) * scale)
+                        )
+                        if candidate_norm < initial_norm:
+                            if candidate_norm < best_norm:
+                                best_u, best_norm, accepted = (
+                                    candidate,
+                                    candidate_norm,
+                                    True,
+                                )
+                            break
+                # 中心导数只有极微弱下降时，仍比较单侧导数；不能被它提前截断而停在折点。
+                # 通常平滑区一次 Newton 已降低一个数量级，保留这一常见快速路径。
+                if best_norm < max(1e-10, 0.1 * initial_norm):
                     break
             if not accepted:
                 raise ValueError("Implicit cutting solve did not descend")
+            u = best_u
         if np.linalg.norm(residual(u) * scale) >= 1e-8:
             raise ValueError("Implicit cutting solve did not converge")
         return u

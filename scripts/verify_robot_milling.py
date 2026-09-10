@@ -11,7 +11,8 @@ from verify_milling_process import run_shape
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", type=Path, default=Path("scenes/plate_milling"))
-    parser.add_argument("--workers", type=int, choices=range(1, 5), default=3)
+    # 默认仍保守使用三进程；24 核验收机可显式选最多八进程，不改变固定种子分母。
+    parser.add_argument("--workers", type=int, choices=range(1, 9), default=3)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     out = args.output or Path(

@@ -127,8 +127,29 @@ def run_shape(job):
         report["shape_check"] = inspect_shape(env.stock, target)
         report["invalid_reason"] = env.process.invalid_reason
         report["controller_finished"] = policy.finished
+        report["termination_reason"] = env.process.invalid_reason or (
+            "controller_finished" if policy.finished else "episode_time_limit"
+        )
         if robot:
             report["task_check"] = env.evaluate_task(target)
+            trace.infos[-1]["task_check"] = report["task_check"]
+        # 回放末帧也保存任务语义，不能让报告成功而窗口一直显示默认 False。
+        task_success = bool(
+            policy.finished
+            and not env.process.invalid_reason
+            and report["shape_check"]["passed"]
+            and (not robot or report["task_check"]["result"]["success"])
+        )
+        trace.infos[-1].update(
+            success=task_success,
+            failure_reason=None
+            if task_success
+            else (
+                "shape_or_finish_check_failed"
+                if policy.finished
+                else report["termination_reason"]
+            ),
+        )
         trace.save(out / "trace.npz")
         expected_hash = env.stock.state_hash()
         expected_qpos = env.data.qpos.copy()
@@ -172,6 +193,7 @@ def run_shape(job):
         )
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"
+        report["termination_reason"] = "exception"
     finally:
         report["wall_seconds"] = time.perf_counter() - started
         if env is not None:
