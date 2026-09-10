@@ -85,6 +85,9 @@ class ImplicitWrenchCoupling:
                     if j < 3
                     else max(abs(u[j]) * 1e-7, 1e-5)
                 )
+                if j == 2:
+                    # 近零轴向速度需要确实跨过端面启停面，才能取得两个合法单侧导数。
+                    epsilon = max(epsilon, 1e-8)
                 du = np.zeros(4)
                 du[j] = epsilon
                 rp, rm = residual(u + du), residual(u - du)
@@ -99,7 +102,7 @@ class ImplicitWrenchCoupling:
                     delta = np.linalg.solve(normalized, -r * scale) / scale
                 except np.linalg.LinAlgError:
                     continue
-                for factor in (2.0 ** (-i) for i in range(16)):
+                for factor in (2.0 ** (-i) for i in range(24)):
                     candidate = u + factor * delta
                     if candidate[3] > 1 and np.linalg.norm(
                         residual(candidate) * scale

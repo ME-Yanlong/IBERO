@@ -69,6 +69,20 @@ def test_corrupt_ledger_and_bad_indices_rejected_without_mutation():
     assert stock.state_hash() == before
 
 
+def test_query_extreme_points_and_empty_multidimensional_ids_are_bounded():
+    stock = VoxelStock(StockParameters(), 0.002)
+    with np.errstate(all="raise"):
+        assert stock.point_indices([1e300, 0, 0]) == -1
+    for value in (1, [], [1, 2], [[1, 2]]):
+        with pytest.raises(ValueError):
+            stock.point_indices(value)
+    with pytest.raises(ValueError):
+        stock.prepare_removal(np.empty((0, 3), dtype=int), "malformed-empty")
+    event = stock.prepare_removal([0], "oversized-id")
+    with pytest.raises(ValueError):
+        stock.validate_event(replace(event, removed_ids=(10**100,)))
+
+
 def test_cylinder_shank_does_not_cut_and_fast_path_has_no_gap():
     tool = EndMillGeometry(0.004, 0.004, 0.01, 0.02)
     pose = ToolPose((0, 0, 0))

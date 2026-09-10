@@ -52,13 +52,19 @@ class StockTrace:
         self.env.binding.ensure_consistent()
         state = np.empty(mujoco.mj_stateSize(self.env.model, Trace.spec))
         mujoco.mj_getState(self.env.model, self.env.data, state, Trace.spec)
+        if not np.isfinite(state).all():
+            raise ValueError("Cannot record a nonfinite physical state")
+        # 预检完成后一起追加，错误 info / 模式不会留下长度不同的半帧。
+        snapshot = json.loads(json.dumps(info, allow_nan=False))
+        if not isinstance(snapshot, dict):
+            raise ValueError("Trace frame info must be a mapping")
+        mode = self._model_mode()
+        self._validate_mode(mode)
         self.states.append(state)
-        self.infos.append(json.loads(json.dumps(info, allow_nan=False)))
+        self.infos.append(snapshot)
         self.events = list(self.env.stock.events)
         self.event_counts.append(len(self.events))
         self.material_hashes.append(self.env.stock.state_hash())
-        mode = self._model_mode()
-        self._validate_mode(mode)
         self.collision_modes.append(mode)
 
     def restore(self, index):

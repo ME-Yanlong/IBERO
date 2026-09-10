@@ -150,12 +150,21 @@ class VoxelStock:
         return (np.asarray(points) - self.origin) @ self.rotation
 
     def point_indices(self, world_points):
-        p = self.world_to_local(world_points)
-        if p.shape[-1] != 3 or not np.isfinite(p).all():
+        raw = np.asarray(world_points, dtype=float)
+        if raw.ndim < 1 or raw.shape[-1] != 3 or not np.isfinite(raw).all():
             raise ValueError("Finite points with final dimension 3 required")
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                p = self.world_to_local(raw)
+        except FloatingPointError as error:
+            raise ValueError(
+                "Point coordinate transform exceeds numerical range"
+            ) from error
         size = np.asarray(self.params.size_m)
-        index = np.floor((p + size / 2) / self.cell_size_m).astype(int)
         valid = np.all((p >= -size / 2) & (p < size / 2), axis=-1)
+        # 先排除域外点，再转整数，避免巨大但有限的外部坐标触发整型溢出。
+        bounded = np.where(valid[..., None], p, 0)
+        index = np.floor((bounded + size / 2) / self.cell_size_m).astype(int)
         index = np.clip(index, 0, np.asarray(self.shape) - 1)
         flat = np.ravel_multi_index(tuple(np.moveaxis(index, -1, 0)), self.shape)
         return np.where(valid, flat, -1)
@@ -169,7 +178,7 @@ class VoxelStock:
         if not isinstance(event_id, str) or not event_id or len(event_id) > 128:
             raise ValueError("Nonempty bounded removal event id required")
         raw = np.asarray(ids)
-        if raw.size and (raw.dtype.kind not in "iu" or raw.ndim != 1):
+        if raw.ndim != 1 or (raw.size and raw.dtype.kind not in "iu"):
             raise ValueError("Removal ids must be a one-dimensional integer sequence")
         selected = np.unique(raw.astype(np.int64))
         if np.any(selected < 0) or np.any(selected >= len(self.centers)):
@@ -203,6 +212,8 @@ class VoxelStock:
             return np.empty(0, dtype=np.int64), 0.0, True
         if len(self.events) >= 100000:
             raise ValueError("Removal event capacity exceeded")
+        if any(i >= len(self.centers) for i in event.removed_ids):
+            raise ValueError("Removal index outside stock")
         ids = np.asarray(event.removed_ids, dtype=np.int64)
         if (
             event.before_version != self.version

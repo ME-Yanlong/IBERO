@@ -5,7 +5,7 @@ kind: milling_bench
 backend: mujoco
 parameter_status: provisional
 physics:
-  timestep_s: 0.0002
+  timestep_s: 0.0001  # 200 μs 混合刃区切换曾失败；默认采用通过直槽检查的 100 μs。
   control_hz: 100
   gravity_m_s2: [0, 0, 0]  # 明确零重力辨识；机器人工作站使用地球重力。
 materials:

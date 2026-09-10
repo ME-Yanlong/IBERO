@@ -77,12 +77,45 @@ def run_shape(job):
         report["shape_check"] = inspect_shape(env.stock, target)
         report["invalid_reason"] = env.process.invalid_reason
         report["controller_finished"] = policy.finished
+        trace.save(out / "trace.npz")
+        expected_hash = env.stock.state_hash()
+        expected_qpos = env.data.qpos.copy()
+        loaded = StockTrace(env).load(out / "trace.npz")
+        checked_frames = sorted(
+            {
+                0,
+                len(trace.states) - 1,
+                next((i for i, n in enumerate(trace.event_counts) if n > 0), 0),
+            }
+        )
+        replay_checks = []
+        for frame in checked_frames:
+            loaded.restore(frame)
+            replay_checks.append(env.stock.state_hash() == trace.material_hashes[frame])
+            env.binding.ensure_consistent()
+        loaded.restore(len(trace.states) - 1)
+        replay_checks += [
+            env.stock.state_hash() == expected_hash,
+            np.array_equal(env.data.qpos, expected_qpos),
+        ]
+        try:
+            env.step(env.start, 0, substeps=1)
+        except RuntimeError:
+            replay_checks.append(True)
+        else:
+            replay_checks.append(False)
+        report["replay_check"] = {
+            "frames": checked_frames,
+            "passed": all(replay_checks),
+            "resume_requires_reset": replay_checks[-1],
+        }
         report["probe_check"] = inspect_machined_stock(env.stock, target)
         report["passed"] = bool(
             policy.finished
-            and not env.process.invalid_reason
+            and not report["invalid_reason"]
             and report["shape_check"]["passed"]
             and report["probe_check"]["passed"]
+            and report["replay_check"]["passed"]
         )
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"

@@ -10,6 +10,8 @@ from ibero.materials.stock_collision import add_stock_geoms, StockCollisionBindi
 from ibero.core.loads import PhysicalLoads
 from ibero.core.reproducibility import simulation_source_hash
 from ibero.processes.milling import MillingProcess
+from ibero.materials.parameters import finite_number
+from ibero.processes.tools import quaternion_matrix
 
 
 def add_spindle(
@@ -24,6 +26,13 @@ def add_spindle(
     ft_quaternion=(1, 0, 0, 0),
 ):
     """可复用工具：端面/侧刃圆柱与非切削刀柄分开，转速来自实际转子关节。"""
+    quaternion_matrix(ft_quaternion)
+    for name, value in (
+        ("rotor_mass_kg", rotor_mass_kg),
+        ("housing_mass_kg", housing_mass_kg),
+        ("torque_limit_nm", torque_limit_nm),
+    ):
+        finite_number(value, name)
     mount = parent.add_body(name=prefix + "mount")
     mount.add_geom(
         name=prefix + "housing",
@@ -107,8 +116,10 @@ class MillingFixture:
         axis_damping_ns_m=80.0,
         axis_force_limit_n=50.0,
     ):
-        from ibero.materials.parameters import finite_number
-
+        finite_number(timestep, "timestep")
+        start = np.asarray(start, dtype=float)
+        if start.shape != (3,) or not np.isfinite(start).all():
+            raise ValueError("Finite initial tool position required")
         self.axis_parameters = {
             "stiffness_n_m": finite_number(axis_stiffness_n_m, "axis_stiffness_n_m"),
             "damping_ns_m": finite_number(axis_damping_ns_m, "axis_damping_ns_m"),
@@ -199,6 +210,8 @@ class MillingFixture:
         return env
 
     def reset(self, *, seed=0):
+        if type(seed) is not int or not 0 <= seed < 2**32:
+            raise ValueError("Fixture seed must be an integer in [0, 2**32)")
         self.binding.reset(self.data)
         self.process.reset()
         self.loads.reset()
@@ -244,6 +257,7 @@ class MillingFixture:
         if self._done or self._replay_restored:
             raise RuntimeError("Finished/replayed milling must reset")
         target = np.asarray(target, dtype=float)
+        finite_number(rpm, "spindle command rpm", positive=False)
         if (
             target.shape != (3,)
             or not np.isfinite(target).all()

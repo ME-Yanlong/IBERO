@@ -286,3 +286,21 @@ def test_implicit_face_activation_boundary_has_balanced_solution():
     e.loads.commit(e.data)
     mujoco.mj_step(e.model, e.data)
     assert abs(e.data.qvel[2]) < 1e-9
+
+
+def test_invalid_commands_and_trace_frames_are_rejected_before_mutation():
+    from ibero.core.stock_trace import StockTrace
+
+    e = fixture()
+    trace = StockTrace(e)
+    for bad in (float("nan"), float("inf"), -1, True):
+        with pytest.raises(ValueError):
+            e.step(e.start, bad)
+    assert e.data.time == 0 and e.stock.version == 0
+    for info in ({"bad": float("nan")}, [], None):
+        with pytest.raises(ValueError):
+            trace.append(info)
+    assert not trace.states and not trace.infos and not trace.collision_modes
+    for seed in (True, -1, 2**32):
+        with pytest.raises(ValueError):
+            e.reset(seed=seed)

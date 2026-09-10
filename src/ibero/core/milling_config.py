@@ -69,7 +69,10 @@ def validate_milling_bench(cfg, constraints):
         raise ValueError(
             "Physical stock capacity is 60000 cells, not geometry-only capacity"
         )
-    count = math.prod(math.ceil(s / cell) for s in stock.size_m)
+    ratios = [s / cell for s in stock.size_m]
+    if any(not math.isfinite(r) or r > n["max_cells"] for r in ratios):
+        raise ValueError("Stock resolution exceeds configured capacity")
+    count = math.prod(math.ceil(r - 1e-12) for r in ratios)
     if count > n["max_cells"]:
         raise ValueError("Stock resolution exceeds configured capacity")
     if type(n["angular_samples"]) is not int or not 32 <= n["angular_samples"] <= 512:
