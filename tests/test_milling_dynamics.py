@@ -114,3 +114,50 @@ def test_overload_prevents_both_material_commit_and_integration():
     assert e.stock.state_hash() == h and e.data.time == 0
     with pytest.raises(RuntimeError, match="reset"):
         e.step((0, 0, 0), 6000)
+
+
+def test_faulted_cut_rolls_back_and_requires_reset():
+    e = fixture(start=(0, 0, 1e-8))
+    e.data.joint("mill_spindle").qvel[0] = 6000 * np.pi / 30
+    e.data.qvel[2] = -0.0002
+    mujoco.mj_forward(e.model, e.data)
+    q, h = e.data.qpos.copy(), e.stock.state_hash()
+    with pytest.raises(RuntimeError, match="Injected"):
+        e.step((0, 0, -0.001), 6000, substeps=1, fault_at="after_forward")
+    np.testing.assert_array_equal(e.data.qpos, q)
+    assert e.stock.state_hash() == h and e.data.time == 0
+    assert not e.loads._open
+    e.binding.ensure_consistent()
+    with pytest.raises(RuntimeError, match="reset"):
+        e.step((0, 0, -0.001), 6000)
+    e.reset(seed=0)
+    assert not e._done and e.stock.occupied.all()
+
+
+def test_stopped_tool_is_solid_and_cannot_remove_stock():
+    e = fixture(start=(0, 0, 0.0011))
+    peak_contacts = 0
+    for _ in range(30):
+        info = e.step((0, 0, -0.004), 0)
+        peak_contacts = max(peak_contacts, e.data.ncon)
+    assert peak_contacts > 0
+    assert e.data.site("mill_tip").xpos[2] > 0
+    assert info["mode"] == "solid_contact" and e.stock.version == 0
+
+
+def test_air_cut_is_zero_load_and_idempotent_material():
+    e = fixture()
+    for _ in range(10):
+        info = e.step(e.start + [0.001, 0, 0], 6000)
+    assert info["mode"] == "air_cut" and info["invalid_reason"] is None
+    assert e.stock.version == 0 and np.linalg.norm(info["force_world_n"]) == 0
+
+
+def test_noncutting_housing_retains_contact_when_blade_mask_changes():
+    # 台架级构型诊断：已空的刀刃区域不消除更粗刀柄外圈的实体。
+    e = fixture(start=(0.006, 0, -0.012))
+    housing = e.model.geom("mill_housing").id
+    e.model.geom_contype[e.process.blade_geom] = 2
+    mujoco.mj_forward(e.model, e.data)
+    assert e.model.geom_contype[housing] == 1
+    assert any(housing in (c.geom1, c.geom2) for c in e.data.contact)

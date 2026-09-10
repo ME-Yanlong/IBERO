@@ -1,0 +1,144 @@
+"""S7 三形状过程台架检查；不是 S8 机器人验收，失败保留且返回非零。"""
+
+import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import time
+import numpy as np
+from ibero.benches.milling import MillingFixture
+from ibero.control.milling_bench import MillingBenchScript, bench_target
+from ibero.processes.shape_check import inspect_shape
+from ibero.benches.stock_geometry import section_image
+from ibero.core.stock_trace import StockTrace
+from ibero.core.reproducibility import simulation_source_hash
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_shape(job):
+    shape, output, scene_root = job
+    out = Path(output) / shape
+    out.mkdir(parents=True, exist_ok=False)
+    started = time.perf_counter()
+    report = {
+        "scope": "S7_fixture_not_robot",
+        "shape": shape,
+        "passed": False,
+        "rows": [],
+    }
+    env, trace = None, None
+    try:
+        env = MillingFixture.from_scene(scene_root)
+        report["manifest"] = env.manifest()
+        target = bench_target(shape)
+        report["target"] = asdict(target)
+        policy = MillingBenchScript(env, target)
+        trace = StockTrace(env)
+        trace.append(env.last_info)
+        steps = round(
+            1 / env.scene.config["physics"]["control_hz"] / env.model.opt.timestep
+        )
+        max_time = env.scene.constraints["task"]["max_seconds"]
+        while env.data.time < max_time:
+            command, rpm = policy.command(env)
+            info = env.step(command, rpm, substeps=steps)
+            info["controller_phase"] = policy.phase
+            info["tracking_error_m"] = float(
+                np.linalg.norm(env.data.site("mill_tip").xpos - policy.nominal)
+            )
+            if (
+                info["tracking_error_m"]
+                > env.scene.constraints["safety"]["max_tracking_error_m"]
+            ):
+                env._done = True
+                env.process.invalid_reason = info["invalid_reason"] = (
+                    "tracking_error_limit"
+                )
+            report["rows"].append(info)
+            trace.append(info)
+            if len(report["rows"]) % 200 == 0 or env._done:
+                print(
+                    shape,
+                    round(env.data.time, 3),
+                    policy.phase,
+                    info["invalid_reason"],
+                    "removed",
+                    info["total_removed_volume_m3"],
+                    flush=True,
+                )
+            if env._done or policy.finished:
+                break
+        report["shape_check"] = inspect_shape(env.stock, target)
+        report["invalid_reason"] = env.process.invalid_reason
+        report["controller_finished"] = policy.finished
+        report["passed"] = bool(
+            policy.finished
+            and not env.process.invalid_reason
+            and report["shape_check"]["passed"]
+        )
+    except Exception as error:
+        report["exception"] = f"{type(error).__name__}: {error}"
+    finally:
+        report["wall_seconds"] = time.perf_counter() - started
+        if env is not None:
+            report["sim_seconds"] = float(env.data.time)
+            report["real_time_factor"] = float(env.data.time) / report["wall_seconds"]
+            section_image(env.stock, out / "sections.png")
+            if trace is not None:
+                trace.save(out / "trace.npz")
+        simulation_source_hash.cache_clear()
+        report["frozen_source"] = (
+            report.get("manifest", {}).get("source_hash") == simulation_source_hash()
+        )
+        report["passed"] = report["passed"] and report["frozen_source"]
+        (out / "report.json").write_text(
+            json.dumps(report, indent=2, allow_nan=False), encoding="utf-8"
+        )
+    return {k: v for k, v in report.items() if k != "rows"}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--shape", choices=["all", "slot", "pocket", "through_hole"], default="all"
+    )
+    p.add_argument("--workers", type=int, choices=range(1, 4), default=3)
+    p.add_argument("--output", type=Path)
+    p.add_argument("--scene", type=Path, default=ROOT / "scenes/milling_bench")
+    args = p.parse_args()
+    output = (
+        args.output
+        or ROOT
+        / "artifacts/industrial_core01/stock/milling_process"
+        / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    )
+    output.mkdir(parents=True, exist_ok=False)
+    names = ["slot", "pocket", "through_hole"] if args.shape == "all" else [args.shape]
+    rows = []
+    print("Evidence", output, flush=True)
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        jobs = [
+            pool.submit(run_shape, (s, str(output), str(args.scene))) for s in names
+        ]
+        for future in as_completed(jobs):
+            row = future.result()
+            rows.append(row)
+            print(
+                row["shape"], "passed", row["passed"], row.get("exception"), flush=True
+            )
+    report = {
+        "scope": "S7_three_shape_fixture_only_not_full_G7",
+        "results": rows,
+        "passed": all(r["passed"] for r in rows),
+    }
+    (output / "report.json").write_text(
+        json.dumps(report, indent=2, allow_nan=False), encoding="utf-8"
+    )
+    raise SystemExit(0 if report["passed"] else 1)
+
+
+if __name__ == "__main__":
+    main()

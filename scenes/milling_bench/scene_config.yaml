@@ -1,0 +1,56 @@
+# S7 过程辨识台架；这里没有机器人，不冒称 G1 已完成加工。
+schema_version: ibero.industrial/v0.1
+id: milling_bench
+kind: milling_bench
+backend: mujoco
+parameter_status: provisional
+physics:
+  timestep_s: 0.0002
+  control_hz: 100
+  gravity_m_s2: [0, 0, 0]  # 明确零重力辨识；机器人工作站使用地球重力。
+materials:
+  stock:
+    size_m: [0.024, 0.020, 0.004]
+    density_kg_m3: 7850.0
+    material_grade: AISI1045-provisional
+    parameter_source: illustrative stock; no measured cutting calibration
+numerics:
+  cell_size_m: 0.001
+  max_cells: 60000
+  angular_samples: 128
+tool:
+  radius_m: 0.004
+  cutting_length_m: 0.012
+  shank_radius_m: 0.005
+  shank_length_m: 0.020
+process:
+  coefficients:
+    # Pa 与 N/m 不混用；以下不是钢材实测数据库。
+    tangential_pa: 1.8e+9
+    radial_pa: 0.6e+9
+    axial_pa: 0.2e+9
+    tangential_edge_n_m: 100.0
+    radial_edge_n_m: 50.0
+    axial_edge_n_m: 20.0
+    face_tangent_pa: 1.8e+9
+    face_axial_pa: 0.4e+9
+    material_grade: AISI1045-provisional
+    source: provisional
+  limits:
+    min_rpm: 1000.0
+    max_rpm: 12000.0
+    max_feed_per_tooth_m: 0.0001
+    max_axial_depth_m: 0.006
+    max_force_n: 50.0
+    max_torque_nm: 0.15
+    max_power_w: 100.0
+    teeth: 2
+    center_cutting: true
+initialization:
+  tip_position_m: [0, 0, 0.0023]
+control:
+  rpm: 6000.0
+  feed_m_s: 0.001
+  plunge_m_s: 0.0005
+  settle_seconds: 0.2
+  tracking_tolerance_m: 0.0001

@@ -97,8 +97,10 @@ class MillingFixture:
         *,
         timestep=0.0002,
         start=(-0.025, 0, 0.025),
+        max_cells=60000,
+        angular_samples=128,
     ):
-        self.stock = VoxelStock(stock_parameters, cell_size_m, max_cells=60000)
+        self.stock = VoxelStock(stock_parameters, cell_size_m, max_cells=max_cells)
         self.tool, self.coefficients, self.limits = tool, coefficients, limits
         spec = mujoco.MjSpec()
         spec.option.timestep = timestep
@@ -140,8 +142,36 @@ class MillingFixture:
             tool_tip_site="mill_tip",
             blade_geom="mill_blade",
             spindle_joint="mill_spindle",
+            angular_samples=angular_samples,
         )
+        self.scene = None
         self.reset(seed=0)
+
+    @classmethod
+    def from_scene(cls, root):
+        """P4 菜谱经严格校验再建模；台架不是机器人加工环境。"""
+        from ibero.core.scene_loader import SceneLoader
+        from ibero.materials.parameters import StockParameters, strict_parameters
+        from ibero.processes.tools import EndMillGeometry
+        from ibero.processes.milling_forces import MillingCoefficients, MillingLimits
+
+        scene = SceneLoader().validate(root)
+        cfg = scene.config
+        if cfg["kind"] != "milling_bench":
+            raise ValueError("Expected milling_bench recipe")
+        env = cls(
+            strict_parameters(StockParameters, cfg["materials"]["stock"]),
+            cfg["numerics"]["cell_size_m"],
+            strict_parameters(EndMillGeometry, cfg["tool"]),
+            strict_parameters(MillingCoefficients, cfg["process"]["coefficients"]),
+            strict_parameters(MillingLimits, cfg["process"]["limits"]),
+            timestep=cfg["physics"]["timestep_s"],
+            start=cfg["initialization"]["tip_position_m"],
+            max_cells=cfg["numerics"]["max_cells"],
+            angular_samples=cfg["numerics"]["angular_samples"],
+        )
+        env.scene = scene
+        return env
 
     def reset(self, *, seed=0):
         self.binding.reset(self.data)
@@ -166,6 +196,8 @@ class MillingFixture:
             "limits": asdict(self.limits),
             "timestep_s": float(self.model.opt.timestep),
             "start_m": self.start.tolist(),
+            "angular_samples": self.process.nphi,
+            "scene_recipe_hash": None if self.scene is None else self.scene.scene_hash,
         }
         return {
             "scene_hash": hashlib.sha256(
@@ -199,6 +231,8 @@ class MillingFixture:
             )
         self.data.ctrl[self.model.actuator("mill_motor").id] = rpm * np.pi / 30
         total_removed = 0.0
+        peak_force, peak_torque, peak_power, peak_shank_penetration = 0.0, 0.0, 0.0, 0.0
+        housing = self.model.geom("mill_housing").id
         for _ in range(substeps):
             self.loads.begin(self.data)
             try:
@@ -212,12 +246,28 @@ class MillingFixture:
                 self.loads.commit(self.data)
                 raise
             self.loads.commit(self.data)
+            peak_force = max(peak_force, float(np.linalg.norm(state.force_world_n)))
+            peak_torque = max(peak_torque, abs(float(state.torque_world_nm[2])))
+            peak_power = max(peak_power, state.spindle_power_w)
             if state.invalid_reason:
                 self._done = True
                 break
             total_removed += state.removed_volume_m3
             mujoco.mj_step(self.model, self.data)
             mujoco.mj_forward(self.model, self.data)
+            for contact in self.data.contact:
+                if housing in (contact.geom1, contact.geom2):
+                    peak_shank_penetration = max(
+                        peak_shank_penetration, -float(contact.dist)
+                    )
+            if (
+                self.scene is not None
+                and peak_shank_penetration
+                > self.scene.constraints["safety"]["max_shank_penetration_m"]
+            ):
+                self._done = True
+                self.process.invalid_reason = "shank_contact_limit"
+                break
             if (
                 not np.isfinite(self.data.qpos).all()
                 or not np.isfinite(self.data.qvel).all()
@@ -246,6 +296,10 @@ class MillingFixture:
             ).tolist(),
             ft_force_n=self.data.sensor("mill_force").data.copy().tolist(),
             ft_torque_nm=self.data.sensor("mill_torque").data.copy().tolist(),
+            peak_cutting_force_step_n=peak_force,
+            peak_spindle_torque_step_nm=peak_torque,
+            peak_spindle_power_step_w=peak_power,
+            peak_shank_penetration_step_m=peak_shank_penetration,
         )
         self.last_info = info
         return info

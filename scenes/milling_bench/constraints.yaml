@@ -1,0 +1,7 @@
+safety:
+  max_tracking_error_m: 0.004
+  max_shank_penetration_m: 0.0001
+task:
+  max_seconds: 120.0
+  volume_error_fraction: 0.05
+  boundary_error_cells: 2.0
