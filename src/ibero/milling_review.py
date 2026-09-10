@@ -20,6 +20,8 @@ class MillingViews:
         if render_quality not in {"fast", "quality"}:
             raise ValueError("render_quality must be fast or quality")
         self.render_quality = render_quality
+        # 面板与物理过程读取同一份已验证能力，用户收紧上限后不能仍显示默认 15 N。
+        self.force_limit_n = env.limits.max_force_n
         self.model = copy.deepcopy(env.model)
         self.data = mujoco.MjData(self.model)
         self.stock = VoxelStock(
@@ -205,7 +207,7 @@ class MillingViews:
         draw.rectangle((x0, z0 - height, x0 + width, z0), outline=(90, 105, 120))
         draw.text(
             (490, 478),
-            "XZ 剖面；红：载荷需求峰值，橙：15 N 限额",
+            f"XZ 剖面；红：载荷需求峰值，橙：{self.force_limit_n:g} N 限额",
             font=self.font,
             fill=(190, 205, 220),
         )
@@ -214,9 +216,9 @@ class MillingViews:
         values = [
             float(peaks[a:b].max()) for a, b in zip(edges[:-1], edges[1:]) if b > a
         ]
-        scale = max(15.0, peak)
+        scale = max(self.force_limit_n, peak)
         draw.line((510, 508, 510, 620, 935, 620), fill=(150, 165, 185))
-        limit_y = 620 - 15 / scale * 105
+        limit_y = 620 - self.force_limit_n / scale * 105
         draw.line((510, limit_y, 935, limit_y), fill=(255, 185, 65))
         draw.text(
             (760, 503),
