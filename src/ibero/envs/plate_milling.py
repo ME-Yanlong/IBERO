@@ -116,6 +116,12 @@ class PlateMillingEnv(MillingFixture):
         )
         for name, value in zip(ARM_JOINTS, jitter):
             self.data.joint(name).qpos[0] += value
+            if (
+                not self.model.joint(name).range[0]
+                <= self.data.joint(name).qpos[0]
+                <= self.model.joint(name).range[1]
+            ):
+                raise ValueError("Seed jitter would exceed original joint range")
         mujoco.mj_forward(self.model, self.data)
         r = cfg["robot"]
         self.servo = MillingArmServo(
@@ -175,6 +181,14 @@ class PlateMillingEnv(MillingFixture):
         actual = float(
             np.max(np.abs(self.data.qfrc_actuator[self.servo.dofs]) / self.servo.limits)
         )
+        for joint, adr in zip(self.servo.joints, self.servo.qadr):
+            # 位置约束软接触的数值容差单列为 0.1 mrad；不裁剪运行中的 qpos。
+            if (
+                not self.model.jnt_range[joint, 0] - 0.0001
+                <= self.data.qpos[adr]
+                <= self.model.jnt_range[joint, 1] + 0.0001
+            ):
+                return "original_joint_position_limit_violated"
         a["peak_actual_joint_limit_fraction"] = max(
             a["peak_actual_joint_limit_fraction"], actual
         )

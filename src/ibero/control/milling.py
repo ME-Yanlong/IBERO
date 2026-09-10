@@ -3,6 +3,7 @@
 import mujoco
 import numpy as np
 from ibero.robots.g1_upperbody import ARM_JOINTS
+from ibero.materials.parameters import finite_number
 
 
 class MillingArmServo:
@@ -29,8 +30,14 @@ class MillingArmServo:
         self.dofs = model.jnt_dofadr[self.joints]
         self.qadr = model.jnt_qposadr[self.joints]
         self.site = model.site("mill_tip").id
-        self.kp, self.kd = position_kp, position_kd
-        self.kr, self.dr = rotation_kp, rotation_kd
+        self.kp, self.kd = (
+            finite_number(position_kp, "position_kp"),
+            finite_number(position_kd, "position_kd"),
+        )
+        self.kr, self.dr = (
+            finite_number(rotation_kp, "rotation_kp"),
+            finite_number(rotation_kd, "rotation_kd"),
+        )
         self.rest = data.qpos[self.qadr].copy()
         self.limits = np.max(np.abs(model.jnt_actfrcrange[self.joints]), axis=1)
         self.hold = np.array(
@@ -46,7 +53,6 @@ class MillingArmServo:
             ]
         )
         self.last_requested_fraction = 0.0
-        self.last_actual_fraction = 0.0
         self.hold_targets = {
             int(i): float(data.qpos[model.jnt_qposadr[model.actuator_trnid[i, 0]]])
             for i in self.hold
@@ -75,6 +81,8 @@ class MillingArmServo:
             100 * (self.rest[7:] - data.qpos[self.qadr[7:]])
             - 8 * data.qvel[self.dofs[7:]]
         )
+        if not np.isfinite(required).all():
+            raise ValueError("Robot requested torque overflow; commands unchanged")
         self.last_requested_fraction = float(np.max(np.abs(required) / self.limits))
         desired = np.clip(required, -self.limits, self.limits)
         bias = self.model.actuator_biasprm[self.actuators]

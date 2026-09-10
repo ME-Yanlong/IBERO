@@ -156,7 +156,8 @@ class MillingProcess:
         future = ToolPose(tuple(np.asarray(pose.position) + ahead), pose.quaternion)
         future_ids = swept_cells(self.stock, self.tool, pose, future)
         pending = future_ids[self.stock._occupied[future_ids]]
-        if not len(pending):
+        axial_advance = float((rotation.T @ velocity_world)[2]) < -1e-12
+        if not len(pending) and not axial_advance:
             return np.zeros(self.nphi), np.zeros(self.nphi), 0.0, False
         # 三轴工况的刀轴平行工件 Z，沿每根体素列精确裁剪轴向交集，
         # 不用粗糙 Z 采样把 1 mm 切深误估成 1.125 mm。
@@ -202,10 +203,28 @@ class MillingProcess:
         columns = self.stock._occupied.reshape(self.stock.shape)[
             face_ij[..., 0], face_ij[..., 1], :
         ]
+        # 体素几何以中心判删。圆盘边缘采样可能落入“中心在刃区外”的未删格，
+        # 这类格不能被当前刀尖端面提交去除，不能让已经打通的孔永久产生虚假端面阻力。
+        column_centers = self.stock.centers.reshape((*self.stock.shape, 3))[
+            face_ij[..., 0], face_ij[..., 1], 0, :
+        ].copy()
+        column_centers[..., 2] = tip_z
+        column_tool_xy = (
+            (self.stock.local_to_world(column_centers) - pose.position) @ rotation
+        )[..., :2]
+        face_valid &= np.sum(column_tool_xy**2, axis=-1) <= self.tool.radius_m**2
         # 看一格内最近未去除的中心，不把前视采样点穿过板底误认为末层已经切空。
         below = (z <= tip_z + 1e-12) & (z >= tip_z - cell - 1e-12)
         fraction = float((np.any(columns & below, axis=-1) & face_valid).mean())
-        return lengths, centroids, fraction, True
+        # 斜向微进给的前视 Z 分量小于一格，可能尚未扫到下一层中心，
+        # 但端面下方一格内仍有材料。不能先按“中心无候选”清零端面阻力，
+        # 否则每次层切换制造空载加速→重新接触的数值冲击。几何仍只删真实扫掠中心。
+        return (
+            lengths,
+            centroids,
+            fraction,
+            bool(len(pending) or (axial_advance and fraction > 0)),
+        )
 
     def advance(self, data, loads, *, fault_at=None):
         """在当前状态 forward 后、物理积分前调用。外力累加器由环境统一 begin/commit。"""

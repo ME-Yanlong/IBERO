@@ -117,6 +117,67 @@ def test_overload_prevents_both_material_commit_and_integration():
         e.step((0, 0, 0), 6000)
 
 
+def test_nonlinear_dry_friction_response_is_solved_not_disabled():
+    e = fixture()
+    e.model.dof_frictionloss[0] = 2.0
+    e.data.joint("mill_spindle").qvel[0] = 600.0
+    e.data.ctrl[e.model.actuator("mill_motor").id] = 600.0
+    mujoco.mj_forward(e.model, e.data)
+    q, v = e.data.qpos.copy(), e.data.qvel.copy()
+    e.loads.begin(e.data)
+    point = e.data.site("mill_tip").xpos.copy()
+    constant = np.array([4.0, 0, 0, 0, 0, 0])
+    wrench, response, residual = e.process.coupling.solve(
+        e.data, e.loads.generalized, e.loads.external_body, point, lambda u: constant
+    )
+    assert e.process.coupling.last_diagnostics["method"] == "full_nonlinear_physics"
+    assert residual < 1e-8 and e.model.dof_frictionloss[0] == 2.0
+    np.testing.assert_array_equal(q, e.data.qpos)
+    np.testing.assert_array_equal(v, e.data.qvel)
+    e.loads.add_wrench(e.data, e.process.tool_body, wrench[:3], wrench[3:], point)
+    e.loads.commit(e.data)
+    mujoco.mj_step(e.model, e.data)
+    mujoco.mj_forward(e.model, e.data)
+    assert e.data.qvel[0] == pytest.approx(response[0], abs=1e-8)
+    assert np.any(e.process.coupling.last_wrench)
+    e.reset(seed=0)
+    assert not e.process.coupling.last_wrench.any()
+
+
+def test_oblique_plunge_does_not_lose_face_engagement_between_voxel_centers():
+    from ibero.processes.tools import ToolPose, swept_cells
+
+    e = MillingFixture.from_scene("scenes/milling_bench")
+    # 三层已切；下面还剩一层。此处是几何/啮合单测初态，不是正常任务删料入口。
+    cut = ToolPose((0, 0, -0.000500001))
+    event = e.stock.prepare_removal(
+        swept_cells(e.stock, e.tool, cut, cut), "three-layer-fixture"
+    )
+    e.binding.commit(event, e.data)
+    pose = ToolPose((0, 0, -0.00051))
+    velocity = np.array([0.0001, 0, -0.0005])
+    future = ToolPose(
+        tuple(
+            np.array(pose.position)
+            + velocity / np.linalg.norm(velocity) * e.stock.cell_size_m
+        )
+    )
+    ids = swept_cells(e.stock, e.tool, pose, future)
+    assert not e.stock.occupied[ids].any()
+    _, _, fraction, pending = e.process._engagement(pose, velocity)
+    assert pending and fraction > 0
+    # 完整孔内没有底层材料，不应因为同样的向下运动凭空生成端面阻力。
+    cut_all = ToolPose((0, 0, -0.0021))
+    e.binding.commit(
+        e.stock.prepare_removal(
+            swept_cells(e.stock, e.tool, cut_all, cut_all), "all-layers-fixture"
+        ),
+        e.data,
+    )
+    _, _, fraction, pending = e.process._engagement(pose, velocity)
+    assert fraction == 0 and not pending
+
+
 def test_faulted_cut_rolls_back_and_requires_reset():
     e = fixture(start=(0, 0, 1e-8))
     e.data.joint("mill_spindle").qvel[0] = 6000 * np.pi / 30

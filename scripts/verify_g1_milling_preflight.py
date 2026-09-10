@@ -80,7 +80,7 @@ def main():
         )
         # 预检覆盖预计约 14 N 工况，采用 15 N 包络；后续动态环境仍逐步检查实际关节限值。
         cases = [("gravity", np.zeros(3), np.zeros(3))] + [
-            (f"force_{i}_{sign}", np.eye(3)[i] * 15 * sign, np.array([0, 0, -0.08]))
+            (f"force_{i}_{sign}", np.eye(3)[i] * 15 * sign, np.array([0, 0, -0.15]))
             for i in range(3)
             for sign in (-1, 1)
         ]
@@ -113,6 +113,25 @@ def main():
                         ),
                     }
                 )
+            # 六轴向示例不足以包络任意力方向。以下是逐关节保守范数上界，
+            # 同时包含工具力臂和最大主轴扭矩，不能把有限样例冒称整个球形载荷域。
+            moment_bound = limits.max_torque_nm + 15 * (
+                tool.radius_m + tool.cutting_length_m
+            )
+            upper = (
+                np.abs(data.qfrc_bias[dofs])
+                + 15 * np.linalg.norm(jp[:, dofs], axis=0)
+                + moment_bound * np.linalg.norm(jr[:, dofs], axis=0)
+            )
+            loads.append(
+                {
+                    "case": "all_directions_conservative_norm_bound",
+                    "required_joint_absolute_upper_nm": upper.tolist(),
+                    "force_norm_bound_n": 15.0,
+                    "moment_norm_bound_nm": moment_bound,
+                    "max_limit_fraction": float(np.max(upper / limits_nm)),
+                }
+            )
             # 静态刀尖位于毛坯内的刀刃接触是预期；非工作面、自碰撞不能被忽略。
             blade = model.geom("mill_blade").id
             forbidden = [

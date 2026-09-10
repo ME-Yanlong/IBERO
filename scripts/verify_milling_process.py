@@ -181,6 +181,9 @@ def main():
     )
     p.add_argument("--cell-size-m", type=float)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--tracking-tolerance-m", type=float)
+    p.add_argument("--plunge-m-s", type=float)
+    p.add_argument("--feed-m-s", type=float)
     p.add_argument("--edge-transition-chip-m", type=float)
     args = p.parse_args()
     output = (
@@ -192,7 +195,14 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     if any(
         v is not None
-        for v in (args.timestep_s, args.cell_size_m, args.edge_transition_chip_m)
+        for v in (
+            args.timestep_s,
+            args.cell_size_m,
+            args.edge_transition_chip_m,
+            args.tracking_tolerance_m,
+            args.plunge_m_s,
+            args.feed_m_s,
+        )
     ):
         resolved = output / "resolved_scene"
         resolved.mkdir()
@@ -207,6 +217,13 @@ def main():
         ):
             if value is not None:
                 cfg["numerics"][name] = value
+        for name, value in (
+            ("tracking_tolerance_m", args.tracking_tolerance_m),
+            ("plunge_m_s", args.plunge_m_s),
+            ("feed_m_s", args.feed_m_s),
+        ):
+            if value is not None:
+                cfg["control"][name] = value
         (resolved / "scene_config.yaml").write_text(
             yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8"
         )

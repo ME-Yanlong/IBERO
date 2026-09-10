@@ -109,6 +109,28 @@ def test_robot_trace_reset_seed_and_readonly_replay(env, tmp_path):
     assert env.stock.version == 0 and not env._replay_restored
 
 
+def test_different_p4_target_replay_rejected_before_changing_env(env, tmp_path):
+    trace = StockTrace(env)
+    trace.append(env.last_info)
+    trace.save(tmp_path / "hole.npz")
+    other = PlateMillingEnv(shape="slot")
+    q = other.data.qpos.copy()
+    assert env.manifest()["scene_hash"] != other.manifest()["scene_hash"]
+    with pytest.raises(ValueError, match="mismatch"):
+        StockTrace(other).load(tmp_path / "hole.npz")
+    np.testing.assert_array_equal(q, other.data.qpos)
+
+
+def test_invalid_servo_gains_fail_before_commands(env):
+    from ibero.control.milling import MillingArmServo
+
+    ctrl = env.data.ctrl.copy()
+    for gain in (float("nan"), -1, True):
+        with pytest.raises(ValueError):
+            MillingArmServo(env.model, env.data, position_kp=gain)
+        np.testing.assert_array_equal(ctrl, env.data.ctrl)
+
+
 def test_translated_actual_hole_probe_and_material_are_consistent():
     stock = VoxelStock(
         StockParameters(size_m=(0.024, 0.02, 0.004)), 0.001, origin=[0.45, 0.16, 0.85]
