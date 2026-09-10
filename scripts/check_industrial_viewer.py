@@ -22,17 +22,26 @@ def main():
         choices=["latch_release", "harness_unplug", "plate_milling"],
         default="latch_release",
     )
+    parser.add_argument(
+        "--shape", choices=["through_hole", "slot", "pocket"], default="through_hole"
+    )
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    out = Path("artifacts/industrial_core01/latch/viewer") / datetime.now(
-        timezone.utc
-    ).strftime("%Y%m%dT%H%M%S%fZ")
+    out = args.output or Path(
+        "artifacts/industrial_core01",
+        "stock" if args.scene == "plate_milling" else "latch",
+        "viewer",
+    ) / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out.mkdir(parents=True, exist_ok=False)
+    source_hash = simulation_source_hash()
+    reviewer_options = {}
     if args.scene == "plate_milling":
         from ibero.envs.plate_milling import PlateMillingEnv
         from ibero.milling_review import MillingReviewer
 
-        env = PlateMillingEnv()
+        env = PlateMillingEnv(shape=args.shape)
         reviewer = MillingReviewer
+        reviewer_options["shape"] = args.shape
         env.control_dt = 1 / env.scene.config["physics"]["control_hz"]
         env.max_episode_steps = round(
             env.scene.constraints["task"]["max_seconds"] / env.control_dt
@@ -45,7 +54,9 @@ def main():
     else:
         env = LatchReleaseEnv()
         reviewer = IndustrialReviewer
-    app = reviewer(env, seed=0, steps=env.max_episode_steps if args.full else 20)
+    app = reviewer(
+        env, seed=0, steps=env.max_episode_steps if args.full else 20, **reviewer_options
+    )
     report = {
         "initial_wait": False,
         "pause": False,
@@ -55,12 +66,19 @@ def main():
         "replay": False,
         "rerun": False,
     }
+    # 提前关闭窗口也必须失败，不能因尚未创建成功字段而被 all() 当成通过。
+    if args.full:
+        report.update(
+            successful_episode_1=False,
+            successful_episode_2=False,
+            persistent_finish=False,
+        )
     state = {"phase": "initial", "started": time.monotonic()}
 
     def check():
         try:
             if time.monotonic() - state["started"] > (14400 if args.full else 90):
-                raise TimeoutError("Industrial viewer short check timed out")
+                raise TimeoutError("Industrial viewer interaction check timed out")
             phase = state["phase"]
             if phase == "initial":
                 assert env.data.time == 0 and not app.running
@@ -111,13 +129,14 @@ def main():
                 and app.finished
                 and app.future is None
             ):
+                index = 1 if phase == "full_first" else 2
+                # 失败回合也先留原始轨迹/截图，不能只留下 assertion 文本。
+                app.trace.save(out / f"episode_{index}.npz")
+                app.last_image.save(out / f"episode_{index}.png")
                 assert app.trace.infos[-1]["success"], app.trace.infos[-1].get(
                     "failure_reason"
                 )
-                index = 1 if phase == "full_first" else 2
                 report[f"successful_episode_{index}"] = True
-                app.trace.save(out / f"episode_{index}.npz")
-                app.last_image.save(out / f"episode_{index}.png")
                 print("GUI full episode", index, "passed", flush=True)
                 if index == 1:
                     app.key("Return")
@@ -148,9 +167,14 @@ def main():
     app.run()
     if hasattr(env, "close"):
         env.close()
+    simulation_source_hash.cache_clear()
+    report["source_unchanged_during_run"] = simulation_source_hash() == source_hash
     report["passed"] = all(report.values()) and "error" not in report
-    report["source_hash"] = simulation_source_hash()
+    report["source_hash"] = source_hash
     report["scene"] = args.scene
+    report["shape"] = args.shape if args.scene == "plate_milling" else None
+    report["full"] = args.full
+    report["wall_seconds"] = time.monotonic() - state["started"]
     (out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(out, report)
     raise SystemExit(0 if report["passed"] else 1)
