@@ -263,3 +263,26 @@ def test_repeated_reset_clears_material_loads_and_preserves_handles():
         assert max(samples) - min(samples) < 1024 * 1024
     finally:
         tracemalloc.stop()
+
+
+def test_implicit_face_activation_boundary_has_balanced_solution():
+    e = fixture()
+    e.data.ctrl[e.model.actuator("mill_axis_2").id] = -1 / 5000
+    e.data.joint("mill_spindle").qvel[0] = 600
+    e.data.ctrl[e.model.actuator("mill_motor").id] = 600
+    mujoco.mj_forward(e.model, e.data)
+
+    def piecewise_wrench(u):
+        down = max(-u[2], 0)
+        return np.array([0, 0, 1 + 16000 * down, 0, 0, -0.03 - 144 * down])
+
+    e.loads.begin(e.data)
+    point = e.data.site("mill_tip").xpos.copy()
+    w, u, error = e.process.coupling.solve(
+        e.data, e.loads.generalized, e.loads.external_body, point, piecewise_wrench
+    )
+    assert abs(u[2]) < 1e-9 and error < 1e-8
+    e.loads.add_wrench(e.data, e.process.tool_body, w[:3], w[3:], point)
+    e.loads.commit(e.data)
+    mujoco.mj_step(e.model, e.data)
+    assert abs(e.data.qvel[2]) < 1e-9

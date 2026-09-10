@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import time
+import shutil
+import yaml
 import numpy as np
 from ibero.benches.milling import MillingFixture
 from ibero.control.milling_bench import MillingBenchScript, bench_target
@@ -111,6 +113,11 @@ def main():
     p.add_argument("--workers", type=int, choices=range(1, 4), default=3)
     p.add_argument("--output", type=Path)
     p.add_argument("--scene", type=Path, default=ROOT / "scenes/milling_bench")
+    p.add_argument(
+        "--timestep-s", type=float, help="显式数值敏感性覆盖，另存完整解析菜谱"
+    )
+    p.add_argument("--cell-size-m", type=float)
+    p.add_argument("--edge-transition-chip-m", type=float)
     args = p.parse_args()
     output = (
         args.output
@@ -119,6 +126,33 @@ def main():
         / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     )
     output.mkdir(parents=True, exist_ok=False)
+    if any(
+        v is not None
+        for v in (args.timestep_s, args.cell_size_m, args.edge_transition_chip_m)
+    ):
+        resolved = output / "resolved_scene"
+        resolved.mkdir()
+        cfg = yaml.safe_load(
+            (args.scene / "scene_config.yaml").read_text(encoding="utf-8")
+        )
+        if args.timestep_s is not None:
+            cfg["physics"]["timestep_s"] = args.timestep_s
+        for name, value in (
+            ("cell_size_m", args.cell_size_m),
+            ("edge_transition_chip_m", args.edge_transition_chip_m),
+        ):
+            if value is not None:
+                cfg["numerics"][name] = value
+        (resolved / "scene_config.yaml").write_text(
+            yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
+        for name in ("constraints.yaml", "task_spec.py"):
+            shutil.copyfile(args.scene / name, resolved / name)
+        # 覆盖不绕过 P4 校验，也不改原场景文件；证据目录包含真正使用的整份菜谱。
+        from ibero.core.scene_loader import SceneLoader
+
+        SceneLoader().validate(resolved)
+        args.scene = resolved
     names = ["slot", "pocket", "through_hole"] if args.shape == "all" else [args.shape]
     rows = []
     print("Evidence", output, flush=True)

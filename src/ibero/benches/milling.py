@@ -328,6 +328,9 @@ class MillingFixture:
             peak_spindle_torque_step_nm=peak_torque,
             peak_spindle_power_step_w=peak_power,
             peak_shank_penetration_step_m=peak_shank_penetration,
+            coupling_diagnostics=self.process.coupling.last_diagnostics
+            if self.process.invalid_reason
+            else None,
         )
         self.last_info = info
         return info

@@ -16,6 +16,7 @@ class ImplicitWrenchCoupling:
         self.model = model
         self.body, self.site, self.spindle_dof = tool_body, tip_site, spindle_dof
         self.scratch = mujoco.MjData(model)
+        self.last_diagnostics = {}
 
     def _trial(self, data, base_generalized, base_body, point, wrench):
         m, d = self.model, self.scratch
@@ -36,6 +37,7 @@ class ImplicitWrenchCoupling:
         return result
 
     def solve(self, data, base_generalized, base_body, point, wrench_at_velocity):
+        self.last_diagnostics = {}
         free = self._trial(data, base_generalized, base_body, point, np.zeros(6))
         compliance = np.empty((4, 6))
         for i in range(6):
@@ -53,24 +55,60 @@ class ImplicitWrenchCoupling:
             wrench = wrench_at_velocity(value)
             return value - free - compliance @ wrench
 
-        for _ in range(15):
+        # 连续切削优先用实际上一时刻速度作初猜；自由预测在强负载时可能远离根。
+        current_velocity = np.zeros(6)
+        mujoco.mj_objectVelocity(
+            self.model, data, mujoco.mjtObj.mjOBJ_SITE, self.site, current_velocity, 0
+        )
+        current = np.r_[current_velocity[3:], data.qvel[self.spindle_dof]]
+        if current[3] > 1 and np.linalg.norm(
+            residual(current) * scale
+        ) < np.linalg.norm(residual(u) * scale):
+            u = current
+        for iteration in range(40):
             r = residual(u)
+            self.last_diagnostics = {
+                "iterations": iteration,
+                "scaled_residual": float(np.linalg.norm(r * scale)),
+                "velocity_and_spindle": u.tolist(),
+                "residual": r.tolist(),
+                "free_response": free.tolist(),
+            }
             if np.linalg.norm(r * scale) < 1e-10:
                 break
             jac = np.eye(4)
-            for j, epsilon in enumerate((1e-7, 1e-7, 1e-7, 1e-3)):
+            forward, backward = np.eye(4), np.eye(4)
+            for j in range(4):
+                # 导数扰动随当前速度缩放；固定 0.1 μm/s 扰动会跨越低速刃口过渡区。
+                epsilon = (
+                    max(abs(u[j]) * 1e-6, 1e-11)
+                    if j < 3
+                    else max(abs(u[j]) * 1e-7, 1e-5)
+                )
                 du = np.zeros(4)
                 du[j] = epsilon
-                jac[:, j] = (residual(u + du) - residual(u - du)) / (2 * epsilon)
-            delta = np.linalg.solve(jac, -r)
-            for factor in (1, 0.5, 0.25, 0.125, 0.0625, 0.03125):
-                candidate = u + factor * delta
-                if candidate[3] > 1 and np.linalg.norm(
-                    residual(candidate) * scale
-                ) < np.linalg.norm(r * scale):
-                    u = candidate
+                rp, rm = residual(u + du), residual(u - du)
+                jac[:, j] = (rp - rm) / (2 * epsilon)
+                forward[:, j], backward[:, j] = (rp - r) / epsilon, (r - rm) / epsilon
+            # 端面只抗向下运动，零轴向速度处是物理分段条件；尝试单侧广义导数，
+            # 不用一条跨越启停面的中心差分把求解卡在边界。方程/变量同时按单位缩放。
+            accepted = False
+            for derivative in (jac, forward, backward):
+                normalized = derivative * scale[:, None] / scale[None, :]
+                try:
+                    delta = np.linalg.solve(normalized, -r * scale) / scale
+                except np.linalg.LinAlgError:
+                    continue
+                for factor in (2.0 ** (-i) for i in range(16)):
+                    candidate = u + factor * delta
+                    if candidate[3] > 1 and np.linalg.norm(
+                        residual(candidate) * scale
+                    ) < np.linalg.norm(r * scale):
+                        u, accepted = candidate, True
+                        break
+                if accepted:
                     break
-            else:
+            if not accepted:
                 raise ValueError("Implicit cutting solve did not descend")
         if np.linalg.norm(residual(u) * scale) >= 1e-8:
             raise ValueError("Implicit cutting solve did not converge")

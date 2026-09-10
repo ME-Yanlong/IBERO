@@ -23,6 +23,9 @@ def main():
         strict_parameters(MillingCoefficients, cfg["process"]["coefficients"]),
         strict_parameters(MillingLimits, cfg["process"]["limits"]),
         start=(-0.004, 0, 0.0001),
+        axis_stiffness_n_m=cfg["machine"]["axis_stiffness_n_m"],
+        axis_damping_ns_m=cfg["machine"]["axis_damping_ns_m"],
+        axis_force_limit_n=cfg["machine"]["axis_force_limit_n"],
     )
     pose = ToolPose((-0.004, 0, 0))
     e.binding.commit(
