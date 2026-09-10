@@ -13,6 +13,7 @@ from ibero.envs.plate_milling import PlateMillingEnv
 from ibero.core.stock_trace import StockTrace
 from ibero.processes.implicit_wrench import ImplicitWrenchCoupling
 from ibero.processes.prepared_milling_wrench import PreparedMillingWrench
+from ibero.processes.milling_forces import capacity_reason
 
 
 def main():
@@ -100,6 +101,14 @@ def main():
             row.update(
                 wrench=wrench.tolist(), response=response.tolist(), residual=residual
             )
+            row["capacity_reason"] = capacity_reason(
+                env.limits,
+                rpm=response[3] * 30 / np.pi,
+                velocity_tool=pose.rotation.T @ response[:3],
+                axial_depth_m=float(max(lengths)),
+                force_tool=pose.rotation.T @ wrench[:3],
+                torque_tool=pose.rotation.T @ wrench[3:],
+            )
         except Exception as error:
             row["exception"] = f"{type(error).__name__}: {error}"
         row.update(
@@ -132,7 +141,19 @@ def main():
     (args.output / "report.json").write_text(
         json.dumps(result, indent=2, allow_nan=False), encoding="utf-8"
     )
-    print(json.dumps(result, indent=2), flush=True)
+    print(args.output, "state_unchanged", result["state_unchanged"], flush=True)
+    for row in rows:
+        print(
+            row["anchor"],
+            row.get("exception"),
+            "capacity",
+            row.get("capacity_reason"),
+            "residual",
+            row.get("residual"),
+            "diagnostics",
+            row["diagnostics"],
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

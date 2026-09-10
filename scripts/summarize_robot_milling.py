@@ -1,12 +1,39 @@
 """G8 汇总：三形状种子分母、真实 GUI、静态包络、G7 和实际回放成本。"""
 
 import argparse
+import copy
 import json
 from pathlib import Path
 
 
 def read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def case_passed(row, source):
+    """只按逐例原始证据计数；不能信任上层复制出来的 passed 布尔值。"""
+    return bool(
+        row.get("passed") is True
+        and row.get("frozen_source") is True
+        and row.get("manifest", {}).get("source_hash") == source
+        and row.get("manifest", {}).get("scene_kind") == "plate_milling"
+        and row.get("task_check", {}).get("result", {}).get("success") is True
+        and row.get("shape_check", {}).get("passed") is True
+        and row.get("probe_check", {}).get("passed") is True
+        and row.get("replay_check", {}).get("passed") is True
+        and row.get("controller_finished") is True
+        and not row.get("invalid_reason")
+        and not row.get("exception")
+        and not row.get("artifact_errors")
+    )
+
+
+def raw_case(entry):
+    """缺失原始文件仍保留一个失败分母，不用摘要替代原始检查。"""
+    path = entry.get("report_path")
+    if path and Path(path).is_file():
+        return read(path)
+    return dict(entry, passed=False, exception="Missing raw case report")
 
 
 def summarize(paths):
@@ -44,26 +71,15 @@ def summarize(paths):
         and inputs["performance"]["events"] > 0,
         "group_report_passed": group["passed"] is True,
     }
-    rows = []
+    rows, raw_defaults = [], []
     for entry in group["results"]:
-        row = read(entry["report_path"]) if entry.get("report_path") else entry
-        passed = bool(
-            row.get("passed") is True
-            and row.get("frozen_source") is True
-            and row.get("manifest", {}).get("source_hash") == source
-            and row.get("manifest", {}).get("scene_kind") == "plate_milling"
-            and row.get("task_check", {}).get("result", {}).get("success") is True
-            and row.get("shape_check", {}).get("passed") is True
-            and row.get("probe_check", {}).get("passed") is True
-            and row.get("replay_check", {}).get("passed") is True
-            and row.get("controller_finished") is True
-            and not row.get("invalid_reason")
-            and not row.get("exception")
-        )
+        row = raw_case(entry)
+        raw_defaults.append(row)
+        passed = case_passed(row, source)
         rows.append(
             {
-                "shape": row["shape"],
-                "seed": row["seed"],
+                "shape": row.get("shape"),
+                "seed": row.get("seed"),
                 "passed": passed,
                 "report_path": entry.get("report_path"),
                 "invalid_reason": row.get("invalid_reason"),
@@ -74,6 +90,15 @@ def summarize(paths):
             }
         )
     counts = {}
+    base = next((r for r in raw_defaults if r.get("scene_config")), {})
+    checks["default_recipe_and_failed_case_identity"] = bool(base) and all(
+        r.get("scene_config") == base["scene_config"]
+        and r.get("constraints") == base.get("constraints")
+        and r.get("frozen_source") is True
+        and r.get("manifest", {}).get("source_hash") == source
+        and r.get("manifest", {}).get("seed") == r.get("seed")
+        for r in raw_defaults
+    )
     variants = inputs["variants"]
     checks["coefficient_variants"] = bool(
         variants["passed"] is True
@@ -85,11 +110,49 @@ def summarize(paths):
             for r in variants["results"]
         )
     )
+    variant_rows = []
+    for entry in variants["results"]:
+        row = raw_case(entry)
+        label = entry.get("variant")
+        scale = {"coefficients_090": 0.9, "coefficients_110": 1.1}.get(label)
+        recipe_ok = False
+        if base and scale is not None:
+            expected = copy.deepcopy(base["scene_config"])
+            coefficients = expected["process"]["coefficients"]
+            for name in coefficients:
+                if name not in {"source", "material_grade"}:
+                    coefficients[name] *= scale
+            expected["materials"]["stock"]["parameter_source"] += (
+                f"; coefficient sensitivity x{scale}; not measured material data"
+            )
+            recipe_ok = (
+                row.get("scene_config") == expected
+                and row.get("constraints") == base.get("constraints")
+                and row.get("manifest", {}).get("coefficients") == coefficients
+                and row.get("manifest", {}).get("seed") == row.get("seed")
+                and row.get("seed") == entry.get("seed")
+                and row.get("shape") == "through_hole"
+            )
+        variant_rows.append(
+            dict(
+                variant=label,
+                seed=row.get("seed"),
+                passed=case_passed(row, source) and recipe_ok,
+                recipe_matches_predefined_scale=recipe_ok,
+                report_path=entry.get("report_path"),
+                invalid_reason=row.get("invalid_reason"),
+                exception=row.get("exception"),
+            )
+        )
+    checks["variant_recipe_integrity"] = all(
+        r["recipe_matches_predefined_scale"] for r in variant_rows
+    )
     for label in ("coefficients_090", "coefficients_110"):
-        selected = [r for r in variants["results"] if r["variant"] == label]
+        selected = [r for r in variant_rows if r["variant"] == label]
         checks[label] = (
             len(selected) == 5
             and {r["seed"] for r in selected} == set(range(100, 105))
+            and all(type(r["seed"]) is int for r in selected)
             and sum(r["passed"] is True for r in selected) >= 4
         )
     checks["exactly_thirty_cases"] = len(rows) == 30
@@ -112,6 +175,7 @@ def summarize(paths):
         "counts": counts,
         "inputs": {k: str(Path(v).resolve()) for k, v in paths.items()},
         "results": rows,
+        "variant_results": variant_rows,
         "performance_target_is_not_physics_gate": True,
         "excludes": [
             "real_material_calibration",
