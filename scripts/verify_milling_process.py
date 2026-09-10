@@ -51,6 +51,26 @@ def run_shape(job):
         # 报告自带实际解析菜谱；不能只记录不可逆 hash 而让审阅者猜当时的步长/进给。
         report["scene_config"] = env.scene.config
         report["constraints"] = env.scene.constraints
+        report["initial_state"] = {
+            "qpos": env.data.qpos.tolist(),
+            "qvel": env.data.qvel.tolist(),
+            "tip_position_world_m": env.data.site("mill_tip").xpos.tolist(),
+        }
+        if robot:
+            report["seed_scope"] = {
+                "randomized": "fourteen_arm_joint_reset_offsets_only",
+                "uniform_half_range_rad": env.scene.config["initialization"][
+                    "joint_jitter_rad"
+                ],
+                "not_randomized": [
+                    "material",
+                    "geometry",
+                    "friction",
+                    "tool",
+                    "process_coefficients",
+                ],
+                "claim": "small_initialization_robustness_not_material_generalization",
+            }
         target = env.target if robot else bench_target(shape)
         report["target"] = asdict(target)
         policy = MillingBenchScript(env, target)
