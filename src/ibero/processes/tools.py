@@ -100,9 +100,29 @@ def interpolate_poses(
 def swept_cells(stock, tool, start, end):
     """返回纯几何候选 ID，包含空格以支持稳定幂等；不在这里删材料或施力。"""
     bound = math.hypot(tool.radius_m, tool.cutting_length_m)
-    # 保守局部 AABB 缩小候选，旋转后仍包含全部圆柱刃区。
-    tips = stock.world_to_local([start.position, end.position])
-    lower, upper = tips.min(axis=0) - bound, tips.max(axis=0) + bound
+    # 用两个端点圆柱的精确局部 AABB，而非用刀长作为 XY 球半径。
+    # 转动时额外膨胀 bound*theta/2：SLERP 中间点对端点线性插值的偏差
+    # <= 2*bound*t*(1-t)*theta <= bound*theta/2，故大角度也不会漏切。
+    centers, extents = [], []
+    for pose in (start, end):
+        axis = stock.rotation.T @ pose.rotation[:, 2]
+        centers.append(
+            stock.world_to_local(
+                np.array(pose.position)
+                + pose.rotation[:, 2] * tool.cutting_length_m / 2
+            )
+        )
+        extents.append(
+            tool.radius_m * np.sqrt(np.maximum(1 - axis**2, 0))
+            + tool.cutting_length_m / 2 * np.abs(axis)
+        )
+    centers, extents = np.asarray(centers), np.asarray(extents)
+    theta = 2 * math.acos(
+        float(np.clip(abs(np.dot(start.quaternion, end.quaternion)), 0, 1))
+    )
+    padding = bound * theta / 2 + 1e-12
+    lower = (centers - extents).min(axis=0) - padding
+    upper = (centers + extents).max(axis=0) + padding
     candidates = np.flatnonzero(
         np.all((stock.centers >= lower) & (stock.centers <= upper), axis=1)
     )

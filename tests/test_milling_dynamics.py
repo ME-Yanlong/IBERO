@@ -111,6 +111,9 @@ def test_overload_prevents_both_material_commit_and_integration():
     q, h = e.data.qpos.copy(), e.stock.state_hash()
     info = e.step((0, 0, 0), 6000, substeps=1)
     assert info["invalid_reason"] == "cutting_force_overload"
+    assert not info["last_substep_load_applied"] and info["integrated_substeps"] == 0
+    assert info["applied_force_world_n"] == [0.0, 0.0, 0.0]
+    assert info["peak_applied_cutting_force_step_n"] == 0
     np.testing.assert_array_equal(e.data.qpos, q)
     assert e.stock.state_hash() == h and e.data.time == 0
     with pytest.raises(RuntimeError, match="reset"):

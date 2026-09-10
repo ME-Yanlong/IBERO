@@ -137,3 +137,41 @@ def test_analytical_through_hole_volume(cell):
     stock.commit(event)
     expected = math.pi * radius**2 * 0.01
     assert abs(event.volume_m3 / expected - 1) <= 0.05
+
+
+def test_tight_sweep_bounds_match_full_stock_scan_including_large_rotation():
+    import numpy as np
+    from ibero.materials.parameters import StockParameters
+    from ibero.materials.stock import VoxelStock
+    from ibero.processes.tools import (
+        EndMillGeometry,
+        ToolPose,
+        swept_cells,
+        interpolate_poses,
+    )
+    import math
+
+    stock = VoxelStock(
+        StockParameters(size_m=(0.04, 0.04, 0.02)), 0.002, origin=[0.2, -0.1, 0.3]
+    )
+    tool = EndMillGeometry(0.004, 0.012, 0.005, 0.02)
+    rng = np.random.default_rng(91)
+    for _ in range(20):
+        poses = []
+        for j in range(2):
+            q = rng.normal(size=4)
+            q /= np.linalg.norm(q)
+            poses.append(
+                ToolPose(tuple(stock.origin + rng.uniform(-0.01, 0.01, 3)), tuple(q))
+            )
+        expected = np.zeros(len(stock.centers), dtype=bool)
+        points = stock.local_to_world(stock.centers)
+        for pose in interpolate_poses(
+            *poses,
+            max_displacement_m=stock.cell_size_m / 4,
+            radius_bound_m=math.hypot(tool.radius_m, tool.cutting_length_m),
+        ):
+            expected |= tool.contains_cutting_points(points, pose)
+        np.testing.assert_array_equal(
+            swept_cells(stock, tool, *poses), np.flatnonzero(expected)
+        )

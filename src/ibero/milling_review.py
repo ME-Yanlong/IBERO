@@ -142,9 +142,13 @@ class MillingViews:
         draw = ImageDraw.Draw(canvas)
         last = infos[-1] if infos else {}
         force = float(np.linalg.norm(last.get("force_world_n", [0, 0, 0])))
+        peaks = np.asarray(
+            [r.get("peak_cutting_force_step_n", 0.0) for r in infos], dtype=float
+        )
+        peak = float(peaks.max()) if len(peaks) else 0.0
         lines = [
             f"材料/过程级原型，未实测标定 | {last.get('controller_phase', '等待')}",
-            f"切削力 {force:.2f} N | 主轴 {last.get('actual_rpm', 0):.0f} rpm",
+            f"切削需求 {force:.2f} / 峰值 {peak:.2f} N | {last.get('actual_rpm', 0):.0f} rpm",
             f"去除 {self.stock.initial_volume_m3 - self.stock.volume_m3:.3e} m³ | 材料版本 {self.stock.version}",
             f"失败：{last.get('failure_reason') or last.get('invalid_reason') or '无'}",
         ]
@@ -177,19 +181,31 @@ class MillingViews:
         draw.rectangle((x0, z0 - height, x0 + width, z0), outline=(90, 105, 120))
         draw.text(
             (490, 478),
-            "XZ 实体剖面（等比例）；红线：切削力 0–15 N",
+            "XZ 剖面；红：载荷需求峰值，橙：15 N 限额",
             font=self.font,
             fill=(190, 205, 220),
         )
-        rows = infos[-400:]
+        # 全回合历史按桶取峰值，不能在退刀后只画最后几秒零载荷，也不能漏掉窄脉冲。
+        edges = np.linspace(0, len(peaks), min(400, len(peaks)) + 1, dtype=int)
+        values = [
+            float(peaks[a:b].max()) for a, b in zip(edges[:-1], edges[1:]) if b > a
+        ]
+        scale = max(15.0, peak)
         draw.line((510, 508, 510, 620, 935, 620), fill=(150, 165, 185))
+        limit_y = 620 - 15 / scale * 105
+        draw.line((510, limit_y, 935, limit_y), fill=(255, 185, 65))
+        draw.text(
+            (760, 503),
+            f"0–{scale:.1f} N / 全回合",
+            font=self.font,
+            fill=(190, 205, 220),
+        )
         points = [
             (
-                510 + i * 425 / max(1, len(rows) - 1),
-                620
-                - min(1, np.linalg.norm(r.get("force_world_n", [0, 0, 0])) / 15) * 105,
+                510 + i * 425 / max(1, len(values) - 1),
+                620 - value / scale * 105,
             )
-            for i, r in enumerate(rows)
+            for i, value in enumerate(values)
         ]
         if len(points) > 1:
             draw.line(points, fill=(255, 110, 90), width=2)

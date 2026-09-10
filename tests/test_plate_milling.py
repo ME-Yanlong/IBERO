@@ -131,6 +131,26 @@ def test_invalid_servo_gains_fail_before_commands(env):
         np.testing.assert_array_equal(ctrl, env.data.ctrl)
 
 
+def test_working_blade_cannot_hide_a_collision_with_a_fixture(monkeypatch):
+    import ibero.envs.plate_milling as module
+
+    original = module.add_plate_support
+
+    def with_obstacle(spec, **kwargs):
+        original(spec, **kwargs)
+        spec.worldbody.add_geom(
+            name="injected_fixture",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            pos=np.array(kwargs["origin"]) + [0, 0, 0.006],
+            size=[0.001, 0.001, 0.001],
+        )
+
+    monkeypatch.setattr(module, "add_plate_support", with_obstacle)
+    e = module.PlateMillingEnv()
+    assert any(e.process.blade_geom in (c.geom1, c.geom2) for c in e.data.contact)
+    assert e._after_physics_step() == "robot_or_fixture_contact_limit"
+
+
 def test_translated_actual_hole_probe_and_material_are_consistent():
     stock = VoxelStock(
         StockParameters(size_m=(0.024, 0.02, 0.004)), 0.001, origin=[0.45, 0.16, 0.85]

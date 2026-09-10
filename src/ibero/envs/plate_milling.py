@@ -71,6 +71,7 @@ class PlateMillingEnv(MillingFixture):
         self.model = spec.compile()
         self.data = mujoco.MjData(self.model)
         self.binding = StockCollisionBinding(self.model, self.stock)
+        self.stock_geom_ids = frozenset(int(i) for i in self.binding.geom_ids)
         self.loads = PhysicalLoads(self.model)
         self.process = MillingProcess(
             self.model,
@@ -198,7 +199,12 @@ class PlateMillingEnv(MillingFixture):
         )
         a["peak_orientation_error_rad"] = max(a["peak_orientation_error_rad"], angle)
         for contact in self.data.contact:
-            if self.process.blade_geom not in (contact.geom1, contact.geom2):
+            blade = self.process.blade_geom
+            working_pair = (
+                contact.geom1 == blade and contact.geom2 in self.stock_geom_ids
+            ) or (contact.geom2 == blade and contact.geom1 in self.stock_geom_ids)
+            # 只豁免工作刃—毛坯正常接触。刃区撞支架、机器人或地面仍必须审计。
+            if not working_pair:
                 a["peak_forbidden_penetration_m"] = max(
                     a["peak_forbidden_penetration_m"], -float(contact.dist)
                 )

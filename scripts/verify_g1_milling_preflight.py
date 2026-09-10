@@ -134,13 +134,20 @@ def main():
             )
             # 静态刀尖位于毛坯内的刀刃接触是预期；非工作面、自碰撞不能被忽略。
             blade = model.geom("mill_blade").id
+            stock_geom_ids = {
+                model.geom(f"stock_cell_{i}").id for i in range(len(stock.centers))
+            }
             forbidden = [
                 {
                     "pair": [model.geom(c.geom1).name, model.geom(c.geom2).name],
                     "penetration_m": -float(c.dist),
                 }
                 for c in data.contact
-                if blade not in (c.geom1, c.geom2) and c.dist < -0.0001
+                if not (
+                    (c.geom1 == blade and c.geom2 in stock_geom_ids)
+                    or (c.geom2 == blade and c.geom1 in stock_geom_ids)
+                )
+                and c.dist < -0.0001
             ]
             row = {
                 "pose": label,

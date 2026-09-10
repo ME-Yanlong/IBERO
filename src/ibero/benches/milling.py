@@ -276,6 +276,8 @@ class MillingFixture:
         self.data.ctrl[self.model.actuator("mill_motor").id] = rpm * np.pi / 30
         total_removed = 0.0
         peak_force, peak_torque, peak_power, peak_shank_penetration = 0.0, 0.0, 0.0, 0.0
+        peak_applied_force = 0.0
+        integrated_substeps = 0
         housing = self.model.geom("mill_housing").id
         for _ in range(substeps):
             self._before_physics_step()
@@ -293,13 +295,22 @@ class MillingFixture:
                 raise
             self.loads.commit(self.data)
             peak_force = max(peak_force, float(np.linalg.norm(state.force_world_n)))
-            peak_torque = max(peak_torque, abs(float(state.torque_world_nm[2])))
+            spindle_axis = self.data.site_xmat[self.process.tip_site].reshape(3, 3)[
+                :, 2
+            ]
+            peak_torque = max(
+                peak_torque, abs(float(spindle_axis @ state.torque_world_nm))
+            )
             peak_power = max(peak_power, state.spindle_power_w)
             if state.invalid_reason:
                 self._done = True
                 break
             total_removed += state.removed_volume_m3
+            peak_applied_force = max(
+                peak_applied_force, float(np.linalg.norm(state.force_world_n))
+            )
             mujoco.mj_step(self.model, self.data)
+            integrated_substeps += 1
             mujoco.mj_forward(self.model, self.data)
             robot_reason = self._after_physics_step()
             if robot_reason:
@@ -363,6 +374,16 @@ class MillingFixture:
             ft_force_n=self.data.sensor("mill_force").data.copy().tolist(),
             ft_torque_nm=self.data.sensor("mill_torque").data.copy().tolist(),
             peak_cutting_force_step_n=peak_force,
+            # 过载候选被拒绝时并未施加该载荷；预测峰值与真实已积分载荷必须分开。
+            last_substep_load_applied=state.invalid_reason is None,
+            applied_force_world_n=list(state.force_world_n)
+            if state.invalid_reason is None
+            else [0.0, 0.0, 0.0],
+            applied_torque_world_nm=list(state.torque_world_nm)
+            if state.invalid_reason is None
+            else [0.0, 0.0, 0.0],
+            peak_applied_cutting_force_step_n=peak_applied_force,
+            integrated_substeps=integrated_substeps,
             peak_spindle_torque_step_nm=peak_torque,
             peak_spindle_power_step_w=peak_power,
             peak_shank_penetration_step_m=peak_shank_penetration,
