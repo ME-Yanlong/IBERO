@@ -255,7 +255,10 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     from industrial_resources import require_worker_budget
 
-    require_worker_budget(output, args.workers)
+    names = ["slot", "pocket", "through_hole"] if args.shape == "all" else [args.shape]
+    # 单形状检查只需要一个子进程，不能因缺省 workers=3 再启动两个空闲解释器。
+    effective_workers = min(args.workers, len(names))
+    require_worker_budget(output, effective_workers)
     if any(
         v is not None
         for v in (
@@ -297,10 +300,9 @@ def main():
 
         SceneLoader().validate(resolved)
         args.scene = resolved
-    names = ["slot", "pocket", "through_hole"] if args.shape == "all" else [args.shape]
     rows = []
     print("Evidence", output, flush=True)
-    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+    with ProcessPoolExecutor(max_workers=effective_workers) as pool:
         jobs = {
             pool.submit(run_shape, (s, str(output), str(args.scene), args.seed)): s
             for s in names
@@ -321,6 +323,8 @@ def main():
             )
     report = {
         "scope": "three_shape_execution_subset_see_per_case_scope_not_full_G7_or_G8",
+        "requested_workers": args.workers,
+        "effective_workers": effective_workers,
         "results": rows,
         "passed": all(r["passed"] for r in rows),
     }

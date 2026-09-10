@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 def test_verifier_keeps_original_failure_when_both_artifacts_fail(
     monkeypatch, tmp_path
@@ -61,3 +63,54 @@ def test_timeout_is_explicit_in_report_and_saved_trace(monkeypatch, tmp_path):
     trace = verifier.StockTrace(env).load(tmp_path / "slot/trace.npz")
     assert trace.infos[-1]["success"] is False
     assert trace.infos[-1]["failure_reason"] == "episode_time_limit"
+
+
+def test_single_shape_does_not_spawn_unused_workers(monkeypatch, tmp_path):
+    """纯调度替身，不执行物理；只证明请求三 worker 时单任务仍只分配一个。"""
+    from concurrent.futures import Future
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(root / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "milling_verifier_workers", root / "scripts/verify_milling_process.py"
+    )
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    import industrial_resources
+
+    budgets, pool_counts = [], []
+    monkeypatch.setattr(
+        industrial_resources,
+        "require_worker_budget",
+        lambda output, count: budgets.append(count),
+    )
+
+    class FakePool:
+        def __init__(self, max_workers):
+            pool_counts.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def submit(self, function, job):
+            future = Future()
+            future.set_result(dict(shape=job[0], passed=True))
+            return future
+
+    monkeypatch.setattr(verifier, "ProcessPoolExecutor", FakePool)
+    out = tmp_path / "single"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify", "--shape", "through_hole", "--workers", "3", "--output", str(out)],
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        verifier.main()
+    assert exit_info.value.code == 0
+    assert budgets == pool_counts == [1]
+    report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    assert report["effective_workers"] == 1 and report["requested_workers"] == 3
