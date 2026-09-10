@@ -29,10 +29,16 @@ python scripts/verify_g1_milling_preflight.py
 python scripts/diagnose_g1_milling_servo.py
 python scripts/verify_milling_process.py --scene scenes/plate_milling --shape through_hole --workers 1
 python -m pytest -q tests/test_plate_milling.py
+python -m ibero.demo --env plate_milling --shape through_hole --viewer
+python -m ibero.demo --env plate_milling --shape slot --viewer --no-visual-chips
 ```
 
 上述第三条目前是单种子开发检查，不是完整 G8。报告会保存实际失败、材料轨迹、形状截面、独立动态探针，以及保存/加载/回看检查。探针使用真正加工后的占据与世界平移，不从目标生成理想孔；它属于独立检验台架，不冒充机器人在线持探针测量。
 
 ## 尚待闭合
 
-实际机器人直槽、浅腔、通孔的完整稳定性与跨种子 G8 验收、加工专用持久四视图、可关闭视觉切屑、全量最终回归和体验性能均须后续证据闭合。台架已通过不代表机器人已通过；截图和控制器走完也不能单独让任务成功。
+加工专用持久四视图和可关闭视觉切屑已实现，短程真实 GUI 交互及显示隔离检查通过。实际机器人直槽、浅腔、通孔的完整稳定性、跨种子 G8、两次完整成功 GUI、全量最终回归和体验性能仍须证据闭合。台架已通过不代表机器人已通过；截图和控制器走完也不能单独让任务成功。
+
+### 载荷诊断与数值边界
+
+内层阻抗目前每物理步更新（100 μs，即仿真 10 kHz），高层路径仍为 100 Hz；不是声称真实 G1 SDK 有这一频率。原 1 kHz 与 10 kHz 的过载反例均保留。端面啮合不能只用“是否扫到新的体素中心”判断：斜向微进给可能在层间产生短暂中心空隙，而既定一格端面前视仍看到下层材料。端面面积同时遵守可切列中心条件，防止完整孔边缘的不可提交格产生持续伪载荷。原始失败与修正验收参见开发日志 §18.18。

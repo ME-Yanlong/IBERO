@@ -28,6 +28,8 @@ def main():
     p.add_argument("--force", type=float, nargs=3, default=[0, 0, 8])
     p.add_argument("--kp", type=float, default=50000.0)
     p.add_argument("--kd", type=float, default=500.0)
+    p.add_argument("--release-at", type=float)
+    p.add_argument("--servo-hz", type=int, default=1000)
     args = p.parse_args()
     out = (
         ROOT
@@ -64,13 +66,20 @@ def main():
         mujoco.mj_forward(model, data)
         servo = MillingArmServo(model, data, position_kp=args.kp, position_kd=args.kd)
         loads = PhysicalLoads(model)
+        physics_peaks = {
+            "tip_speed_m_s": 0.0,
+            "holder_angular_velocity_rad_s": 0.0,
+            "actual_joint_limit_fraction": 0.0,
+        }
         for step in range(round(args.seconds / model.opt.timestep)):
             # 先落稳，再在 0.5 s 内平滑加载，最后以 1 mm/s 跟踪小范围直线。
             target = origin + [min(max(data.time - 2, 0) * 0.001, 0.004), 0, 0]
-            if step % 10 == 0:
+            if step % round(1 / args.servo_hz / model.opt.timestep) == 0:
                 metrics = servo.apply(data, target)
             loads.begin(data)
             ramp = np.clip((data.time - 1) / 0.5, 0, 1)
+            if args.release_at is not None and data.time >= args.release_at:
+                ramp = 0.0
             loads.add_wrench(
                 data,
                 model.body("mill_rotor").id,
@@ -81,6 +90,21 @@ def main():
             loads.commit(data)
             mujoco.mj_step(model, data)
             mujoco.mj_forward(model, data)
+            velocity = np.zeros(6)
+            mujoco.mj_objectVelocity(
+                model, data, mujoco.mjtObj.mjOBJ_SITE, servo.site, velocity, 0
+            )
+            physics_peaks["tip_speed_m_s"] = max(
+                physics_peaks["tip_speed_m_s"], float(np.linalg.norm(velocity[3:]))
+            )
+            physics_peaks["holder_angular_velocity_rad_s"] = max(
+                physics_peaks["holder_angular_velocity_rad_s"],
+                float(np.linalg.norm(velocity[:3])),
+            )
+            physics_peaks["actual_joint_limit_fraction"] = max(
+                physics_peaks["actual_joint_limit_fraction"],
+                float(np.max(np.abs(data.qfrc_actuator[servo.dofs]) / servo.limits)),
+            )
             if step % 100 == 0:
                 velocity = np.zeros(6)
                 mujoco.mj_objectVelocity(
@@ -98,6 +122,7 @@ def main():
                         holder_angular_velocity_rad_s=float(
                             np.linalg.norm(velocity[:3])
                         ),
+                        tip_velocity_m_s=velocity[3:].tolist(),
                         tip_position_m=data.site("mill_tip").xpos.copy().tolist(),
                     )
                 )
@@ -113,6 +138,8 @@ def main():
         report["max_angular_velocity_rad_s"] = max(
             r["holder_angular_velocity_rad_s"] for r in report["rows"]
         )
+        report["physics_step_peaks"] = physics_peaks
+        report["max_tip_speed_m_s"] = physics_peaks["tip_speed_m_s"]
         report["passed"] = bool(
             report["max_tip_error_m"] < 0.0005
             and report["max_orientation_error_rad"] < 0.01

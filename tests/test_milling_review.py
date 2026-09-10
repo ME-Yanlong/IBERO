@@ -30,6 +30,7 @@ def test_viewer_history_and_visual_chips_never_change_live_material_or_physics()
         views.visual_chips = False
         hidden = views.render(trace.infos)
         assert visible.size == hidden.size == (960, 640)
+        assert np.any(np.asarray(visible) != np.asarray(hidden))
         np.testing.assert_array_equal(env.data.qpos, q)
         np.testing.assert_array_equal(env.model.geom_contype, mask)
         np.testing.assert_array_equal(env.model.geom_rgba, rgba)

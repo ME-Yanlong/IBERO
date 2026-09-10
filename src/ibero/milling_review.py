@@ -1,6 +1,7 @@
 """加工四视图：显示拥有独立模型/材料，视觉切屑永远不进入物理或任务。"""
 
 import copy
+from bisect import bisect_left
 from pathlib import Path
 import time
 import mujoco
@@ -87,10 +88,22 @@ class MillingViews:
         recent = events[earlier:]
         self.chip_positions = []
         for event in recent[-3:]:
+            born = bisect_left(trace.event_counts, event.after_version)
+            age = max(
+                0.0,
+                trace.infos[index].get("time_s", 0.0)
+                - trace.infos[born].get("time_s", 0.0),
+            )
             for cell_id in event.removed_ids[:12]:
                 point = self.stock.local_to_world(self.stock.centers[cell_id]).copy()
                 phase = (cell_id * 0.61803398875) % 1 * 2 * np.pi
-                point += [0.007 * np.cos(phase), 0.007 * np.sin(phase), 0.009]
+                # 确定性的轻量弹道示意，回放同帧同外观；速度/重力不是切屑物性标定。
+                radius = 0.007 + 0.02 * age
+                point += [
+                    radius * np.cos(phase),
+                    radius * np.sin(phase),
+                    0.009 + 0.04 * age - 0.15 * age**2,
+                ]
                 self.chip_positions.append(point)
 
     def _chips(self):

@@ -21,6 +21,20 @@ IBERO contains three deliberately narrow, executable simulator tasks:
 - `ibero/CableStretch-v0`: real-contact two-ended cable tension control,
   disturbance recovery and overload unloading (the default demo).
 
+## 开发分支：工业材料扩展
+
+上述三项是原基线。`feature/core01-industrial-materials` 另外实现了真实接触的卡扣按压拔出、带 Flex 线束的拔出放置，以及有实体孔槽、平均加工载荷和真实主轴的加工台架。卡扣/组合与加工台架已有阶段验收，具体冻结版本、失败记录和标定缺口见 [工业机制开发日志 §18](docs/04_Core-0.1_工业材料与加工机制调研.md)。这不等于最终源码的 S9 全量验收。
+
+G1 加工工作站 `scenes/plate_milling/` 仍在 S8 调试，尚未通过完整 G8；不要把它当作稳定机器人加工 benchmark。审阅入口已实现：
+
+```powershell
+python -m ibero.demo --env latch_release --viewer
+python -m ibero.demo --env harness_unplug --viewer
+python -m ibero.demo --env plate_milling --shape through_hole --viewer
+```
+
+窗口初始等待，Enter 运行/重跑，P 暂停、N 单步、B 后退、R 回放。加工窗口的 C 只切换视觉切屑；回看材料使用独立模型/账本，不改变 live 仿真。当前工业细步长仿真明显慢于实时，不能用播放倍率加速物理求解。加工参数、索引和假设见 [工作站说明](scenes/plate_milling/README.md) 与 [台架说明](scenes/milling_bench/README.md)。
+
 ## Current scope
 
 - fixed-base Unitree G1 upper body with two Robotiq 2F-85 grippers and pinch sites;
