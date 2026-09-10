@@ -12,6 +12,7 @@ from ibero.benches.milling import MillingFixture
 from ibero.control.milling_bench import MillingBenchScript, bench_target
 from ibero.processes.shape_check import inspect_shape
 from ibero.benches.stock_geometry import section_image
+from ibero.benches.stock_probe import inspect_machined_stock
 from ibero.core.stock_trace import StockTrace
 from ibero.core.reproducibility import simulation_source_hash
 
@@ -74,10 +75,12 @@ def run_shape(job):
         report["shape_check"] = inspect_shape(env.stock, target)
         report["invalid_reason"] = env.process.invalid_reason
         report["controller_finished"] = policy.finished
+        report["probe_check"] = inspect_machined_stock(env.stock, target)
         report["passed"] = bool(
             policy.finished
             and not env.process.invalid_reason
             and report["shape_check"]["passed"]
+            and report["probe_check"]["passed"]
         )
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"

@@ -23,6 +23,7 @@ def validate_milling_bench(cfg, constraints):
             "process",
             "initialization",
             "control",
+            "machine",
         },
         "milling scene",
     )
@@ -54,9 +55,16 @@ def validate_milling_bench(cfg, constraints):
         raise ValueError("Stock and cutting coefficient grades must agree")
     if limits.max_axial_depth_m > tool.cutting_length_m:
         raise ValueError("Declared axial depth exceeds working flute length")
-    exact(cfg["numerics"], {"cell_size_m", "max_cells", "angular_samples"}, "numerics")
+    exact(
+        cfg["numerics"],
+        {"cell_size_m", "max_cells", "angular_samples", "edge_transition_chip_m"},
+        "numerics",
+    )
     n = cfg["numerics"]
     cell = finite_number(n["cell_size_m"], "cell_size_m")
+    transition = finite_number(n["edge_transition_chip_m"], "edge_transition_chip_m")
+    if transition > 1e-7:
+        raise ValueError("Numerical edge transition exceeds supported small scale")
     if type(n["max_cells"]) is not int or not 1 <= n["max_cells"] <= 60000:
         raise ValueError(
             "Physical stock capacity is 60000 cells, not geometry-only capacity"
@@ -69,6 +77,13 @@ def validate_milling_bench(cfg, constraints):
     exact(cfg["initialization"], {"tip_position_m"}, "initialization")
     vector(cfg["initialization"]["tip_position_m"], 3, "tip_position_m")
     c = cfg["control"]
+    exact(
+        cfg["machine"],
+        {"axis_stiffness_n_m", "axis_damping_ns_m", "axis_force_limit_n"},
+        "machine",
+    )
+    for key, value in cfg["machine"].items():
+        finite_number(value, key)
     exact(
         c,
         {"rpm", "feed_m_s", "plunge_m_s", "settle_seconds", "tracking_tolerance_m"},

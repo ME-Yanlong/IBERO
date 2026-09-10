@@ -5,6 +5,7 @@ import math
 import mujoco
 import numpy as np
 from ibero.processes.tools import ToolPose, swept_cells
+from ibero.materials.parameters import finite_number
 from ibero.processes.implicit_wrench import ImplicitWrenchCoupling
 from ibero.processes.milling_forces import (
     mean_side_wrench,
@@ -55,6 +56,7 @@ class MillingProcess:
         blade_geom,
         spindle_joint,
         angular_samples=128,
+        edge_transition_chip_m=1e-8,
     ):
         if type(angular_samples) is not int or not 32 <= angular_samples <= 512:
             raise ValueError("Bounded engagement quadrature required")
@@ -72,6 +74,13 @@ class MillingProcess:
                 "Milling stock requires dedicated contype=8/conaffinity=1; cannot disable global contact"
             )
         self.nphi = angular_samples
+        self.edge_transition_chip_m = finite_number(
+            edge_transition_chip_m, "edge_transition_chip_m"
+        )
+        if self.edge_transition_chip_m > 1e-7:
+            raise ValueError(
+                "Edge transition is a small numerical scale, not material weakening"
+            )
         phi = (np.arange(angular_samples) + 0.5) * (2 * np.pi / angular_samples)
         self.radial = np.column_stack((np.cos(phi), np.sin(phi), np.zeros(len(phi))))
         self.invalid_reason = None
@@ -231,6 +240,7 @@ class MillingProcess:
                 velocity_tool=v,
                 axial_lengths_m=lengths,
                 axial_centroids_m=centroids,
+                edge_transition_chip_m=self.edge_transition_chip_m,
             )
             if v[2] < -1e-12 and fraction > 0:
                 if not self.limits.center_cutting:

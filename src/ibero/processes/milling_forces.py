@@ -74,6 +74,7 @@ def mean_side_wrench(
     velocity_tool,
     axial_lengths_m,
     axial_centroids_m=None,
+    edge_transition_chip_m=0.0,
 ):
     """按周向中点积分平均载荷，输出关于刀尖的力与力矩。
 
@@ -83,6 +84,7 @@ def mean_side_wrench(
     """
     finite_number(radius_m, "radius")
     finite_number(rpm, "rpm", positive=False)
+    finite_number(edge_transition_chip_m, "edge_transition_chip_m", positive=False)
     if type(teeth) is not int or teeth <= 0:
         raise ValueError("Positive integral teeth required")
     lengths = np.asarray(axial_lengths_m, dtype=float)
@@ -106,9 +108,16 @@ def mean_side_wrench(
     active = chip > 1e-15
     a = lengths * active
     c = coefficients
-    ft = a * (c.tangential_pa * chip + c.tangential_edge_n_m)
-    fr = a * (c.radial_pa * chip + c.radial_edge_n_m)
-    fa = a * (c.axial_pa * chip + c.axial_edge_n_m)
+    # 无进给→切削的理想刃口常数存在跳变。过程可显式指定微小切屑厚度过渡，
+    # 只正则化刃口项，不降低剪切系数、不截断超载。默认 0 保留闭式原模型。
+    edge_weight = (
+        chip / (chip + edge_transition_chip_m)
+        if edge_transition_chip_m
+        else np.ones_like(chip)
+    )
+    ft = a * (c.tangential_pa * chip + c.tangential_edge_n_m * edge_weight)
+    fr = a * (c.radial_pa * chip + c.radial_edge_n_m * edge_weight)
+    fa = a * (c.axial_pa * chip + c.axial_edge_n_m * edge_weight)
     forces = -ft[:, None] * tangent - fr[:, None] * radial
     forces[:, 2] += fa
     z = (

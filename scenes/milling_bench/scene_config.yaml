@@ -18,6 +18,7 @@ numerics:
   cell_size_m: 0.001
   max_cells: 60000
   angular_samples: 128
+  edge_transition_chip_m: 1.0e-8  # 10 nm 数值刃口过渡，非真实材料最小切屑厚度标定。
 tool:
   radius_m: 0.004
   cutting_length_m: 0.012
@@ -48,6 +49,11 @@ process:
     center_cutting: true
 initialization:
   tip_position_m: [0, 0, 0.0023]
+machine:
+  # 独立台架轴伺服，不用于提升 G1 关节能力；实际每轴力限值不变。
+  axis_stiffness_n_m: 50000.0
+  axis_damping_ns_m: 350.0
+  axis_force_limit_n: 50.0
 control:
   rpm: 6000.0
   feed_m_s: 0.001

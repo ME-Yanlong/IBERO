@@ -4,12 +4,14 @@ import time
 import mujoco
 import numpy as np
 from ibero.materials.parameters import StockParameters
+from ibero.materials.parameters import finite_number
 from ibero.materials.stock import VoxelStock
 from ibero.materials.stock_collision import add_stock_geoms, StockCollisionBinding
 from ibero.processes.tools import EndMillGeometry, ToolPose, swept_cells
 
 
-def probe_spec(stock, *, active_only=False):
+def probe_spec(stock, *, active_only=False, radius_m=0.002):
+    finite_number(radius_m, "probe radius_m")
     spec = mujoco.MjSpec()
     spec.option.timestep = 0.0002
     spec.option.gravity = [0, 0, 0]
@@ -20,7 +22,7 @@ def probe_spec(stock, *, active_only=False):
     probe.add_geom(
         name="probe_geom",
         type=mujoco.mjtGeom.mjGEOM_SPHERE,
-        size=[0.002],
+        size=[radius_m],
         mass=0.02,
         rgba=[0.9, 0.3, 0.1, 1],
         solref=[0.001, 1],
@@ -37,7 +39,7 @@ def run_probe(model, data, x=0):
     data.joint("probe_free").qvel[2] = -0.15
     mujoco.mj_forward(model, data)
     rows = []
-    start = time.monotonic()
+    start = time.perf_counter()
     for _ in range(100):
         mujoco.mj_step(model, data, nstep=20)
         mujoco.mj_forward(model, data)
@@ -54,16 +56,16 @@ def run_probe(model, data, x=0):
         "final_z_m": rows[-1]["z_m"],
         "minimum_z_m": min(r["z_m"] for r in rows),
         "ever_contact": any(r["contacts"] for r in rows),
-        "wall_seconds": time.monotonic() - start,
+        "wall_seconds": time.perf_counter() - start,
         "trace": rows,
     }
 
 
 def probe_benchmark():
     stock = VoxelStock(StockParameters(), 0.001)
-    start = time.monotonic()
+    start = time.perf_counter()
     model = probe_spec(stock).compile()
-    preallocated_compile_s = time.monotonic() - start
+    preallocated_compile_s = time.perf_counter() - start
     data = mujoco.MjData(model)
     binding = StockCollisionBinding(model, stock)
     before = run_probe(model, data)
@@ -72,14 +74,14 @@ def probe_benchmark():
     event = stock.prepare_removal(
         swept_cells(stock, tool, pose, pose), "geometry-only-hole"
     )
-    start = time.monotonic()
+    start = time.perf_counter()
     binding.commit(event, data)
-    commit_s = time.monotonic() - start
+    commit_s = time.perf_counter() - start
     through = run_probe(model, data)
     neighbor = run_probe(model, data, x=0.016)
-    start = time.monotonic()
+    start = time.perf_counter()
     rebuilt = probe_spec(stock, active_only=True).compile()
-    recompile_s = time.monotonic() - start
+    recompile_s = time.perf_counter() - start
     alternative = run_probe(rebuilt, mujoco.MjData(rebuilt))
     binding.reset(data)
     reset = run_probe(model, data)
@@ -109,4 +111,53 @@ def probe_benchmark():
             "reset": reset,
             "recompiled": alternative,
         },
+    }
+
+
+def inspect_machined_stock(stock, target):
+    """将实际加工占据传给独立动力学探针，不从目标形状重建理想孔。
+
+    这是检查台架的受控模型重建，不是原机器人场景中的在线探针操作。
+    毛坯坐标/姿态受限，避免把世界 Z 探针误用于旋转工件。
+    """
+    if (
+        not np.allclose(stock.origin, 0)
+        or not np.allclose(stock.rotation, np.eye(3))
+        or target.center_xy_m != (0, 0)
+    ):
+        raise ValueError("Probe inspection supports the declared centered fixture only")
+    radius = 0.00075
+    start = time.perf_counter()
+    model = probe_spec(stock, radius_m=radius).compile()
+    data = mujoco.MjData(model)
+    binding = StockCollisionBinding(model, stock)
+    binding.ensure_consistent()
+    center = run_probe(model, data)
+    neighbor = run_probe(model, data, x=stock.params.size_m[0] / 2 - 2 * radius)
+    bottom = stock.params.size_m[2] / 2 - target.depth_m
+    center_ok = (
+        (
+            not center["ever_contact"]
+            and center["final_z_m"] < -stock.params.size_m[2] / 2 - radius
+        )
+        if target.shape == "through_hole"
+        else (center["ever_contact"] and center["minimum_z_m"] > bottom + radius * 0.7)
+    )
+    checks = {
+        "actual_hole_or_floor": bool(center_ok),
+        "remaining_neighbor_blocks": bool(
+            neighbor["ever_contact"]
+            and neighbor["minimum_z_m"] > stock.params.size_m[2] / 2 + radius * 0.7
+        ),
+        "radial_clearance": target.corner_radius_m - radius >= 3 * stock.cell_size_m,
+    }
+    return {
+        "method": "independent_dynamic_probe_from_actual_occupancy",
+        "stock_state_hash": stock.state_hash(),
+        "radius_m": radius,
+        "clearance_cells": (target.corner_radius_m - radius) / stock.cell_size_m,
+        "checks": checks,
+        "passed": all(checks.values()),
+        "cases": {"center": center, "neighbor": neighbor},
+        "wall_seconds": time.perf_counter() - start,
     }

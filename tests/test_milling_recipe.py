@@ -82,3 +82,20 @@ def test_independent_shape_accepts_reference_and_rejects_under_over_offset(
         )
         report = inspect_shape(stock, target)
         assert report["passed"] is (fault is None), report
+
+
+def test_small_pocket_perimeter_covers_target_without_dense_repeated_paths():
+    from ibero.control.milling_bench import MillingBenchScript, bench_target
+    from ibero.processes.tools import swept_cells, ToolPose
+
+    env = MillingFixture.from_scene(ROOT / "scenes/milling_bench")
+    target = bench_target("pocket")
+    policy = MillingBenchScript(env, target)
+    assert sum(phase == "cut" for _, phase in policy.waypoints) == 4
+    start = env.start
+    for i, (point, _) in enumerate(policy.waypoints):
+        # 仅用作路径覆盖的几何单测，不是过程级切削成功。
+        ids = swept_cells(env.stock, env.tool, ToolPose(start), ToolPose(point))
+        env.stock.commit(env.stock.prepare_removal(ids, f"path-coverage-{i}"))
+        start = point
+    assert inspect_shape(env.stock, target)["passed"]

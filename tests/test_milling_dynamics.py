@@ -10,7 +10,7 @@ from ibero.processes.milling_forces import MillingCoefficients, MillingLimits
 from ibero.core.loads import PhysicalLoads
 
 
-def fixture(*, max_force=50, start=(-0.025, 0, 0.025)):
+def fixture(*, max_force=50, start=(-0.025, 0, 0.025), ft_quaternion=(1, 0, 0, 0)):
     c = MillingCoefficients(
         1.8e9,
         0.6e9,
@@ -31,6 +31,7 @@ def fixture(*, max_force=50, start=(-0.025, 0, 0.025)):
         c,
         limits,
         start=start,
+        ft_quaternion=ft_quaternion,
     )
 
 
@@ -186,10 +187,9 @@ def test_milling_replay_restores_blade_mode_as_well_as_voxels(tmp_path):
 
 
 def test_rotated_ft_and_equal_opposite_world_wrench():
-    e = fixture()
+    e = fixture(ft_quaternion=(np.sqrt(0.5), 0, 0, np.sqrt(0.5)))
     # 传感器局部坐标旋转 90 度，不改变刚体构型；检查轴交换及力矩符号。
     ft = e.model.site("mill_ft_site").id
-    e.model.site_quat[ft] = [np.sqrt(0.5), 0, 0, np.sqrt(0.5)]
     mujoco.mj_forward(e.model, e.data)
     force, torque = np.array([1.0, 2.0, -3.0]), np.array([0.03, -0.02, 0.01])
     for _ in range(3000):
@@ -208,6 +208,7 @@ def test_rotated_ft_and_equal_opposite_world_wrench():
         mujoco.mj_step(e.model, e.data)
         mujoco.mj_forward(e.model, e.data)
     rotation = e.data.site_xmat[ft].reshape(3, 3)
+    np.testing.assert_allclose(rotation, [[0, -1, 0], [1, 0, 0], [0, 0, 1]], atol=1e-12)
     lever = point - e.data.site_xpos[ft]
     np.testing.assert_allclose(
         e.data.sensor("mill_force").data, -rotation.T @ force, atol=1e-6
@@ -217,3 +218,48 @@ def test_rotated_ft_and_equal_opposite_world_wrench():
         -rotation.T @ (torque + np.cross(lever, force)),
         atol=1e-6,
     )
+
+
+def test_repeated_reset_clears_material_loads_and_preserves_handles():
+    import gc
+    import tracemalloc
+
+    e = fixture()
+    identities = (id(e.model), id(e.data), id(e.stock), id(e.binding))
+    geom_ids = e.binding.geom_ids.copy()
+    tracemalloc.start()
+    samples = []
+    try:
+        for index in range(270):
+            e.binding.commit(
+                e.stock.prepare_removal([0, 1], f"reset-cycle-{index}"), e.data
+            )
+            e.loads.begin(e.data)
+            e.loads.add_wrench(
+                e.data,
+                e.process.tool_body,
+                [1, 2, 3],
+                [0, 0, 0.01],
+                e.data.site("mill_tip").xpos,
+            )
+            e.loads.commit(e.data)
+            e.process.sequence = 1
+            e.process.invalid_reason = "test-reset"
+            e.model.geom_contype[e.process.blade_geom] = 2
+            e.reset(seed=0)
+            assert not e.stock.events and not e.stock._events_by_id
+            assert e.stock.version == 0 and e.stock.occupied.all()
+            assert not e.data.qfrc_applied.any() and not e.data.xfrc_applied.any()
+            assert not e.loads._last_body.any() and not e.loads._open
+            assert e.process.sequence == 0 and e.process.invalid_reason is None
+            assert e.model.geom_contype[e.process.blade_geom] == 1
+            assert identities == (id(e.model), id(e.data), id(e.stock), id(e.binding))
+            np.testing.assert_array_equal(e.binding.geom_ids, geom_ids)
+            e.binding.ensure_consistent()
+            if index >= 20 and index % 10 == 0:
+                gc.collect()
+                samples.append(tracemalloc.get_traced_memory()[0])
+        # 预热后 250 回合的受跟踪活跃内存界；不是对全部原生内存的无限期无泄漏保证。
+        assert max(samples) - min(samples) < 1024 * 1024
+    finally:
+        tracemalloc.stop()

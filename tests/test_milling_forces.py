@@ -111,3 +111,29 @@ def test_capacity_never_clips_requested_load():
         )
         is None
     )
+
+
+def test_numerical_edge_transition_is_explicit_small_and_continuous(coefficients):
+    common = dict(
+        radius_m=0.004, rpm=6000, teeth=2, axial_lengths_m=np.full(128, 0.002)
+    )
+    reference = mean_side_wrench(coefficients, velocity_tool=[0.001, 0, 0], **common)
+    for transition in (1e-8, 5e-9):
+        regular = mean_side_wrench(
+            coefficients,
+            velocity_tool=[0.001, 0, 0],
+            edge_transition_chip_m=transition,
+            **common,
+        )
+        for actual, expected in zip(regular, reference):
+            assert np.linalg.norm(actual - expected) / np.linalg.norm(expected) < 0.001
+    forces = []
+    for speed in (1e-7, 1e-8, 1e-9, 0):
+        f, _ = mean_side_wrench(
+            coefficients,
+            velocity_tool=[speed, 0, 0],
+            edge_transition_chip_m=1e-8,
+            **common,
+        )
+        forces.append(np.linalg.norm(f))
+    assert forces[-1] == 0 and all(a > b for a, b in zip(forces, forces[1:]))

@@ -38,7 +38,11 @@ class MillingBenchScript:
             (np.array([x - a, y - b, safe_z]), "approach"),
             (np.array([x - a, y - b, cut_z]), "plunge"),
         ]
-        if target.shape != "through_hole":
+        if target.shape == "pocket" and min(a, b) <= env.tool.radius_m:
+            # 小浅腔的整个内部都在边框刀具扫掠半径内，闭合四边已覆盖，免去重复满栅格空切。
+            for px, py in ((a, -b), (a, b), (-a, b), (-a, -b)):
+                self.waypoints.append((np.array([x + px, y + py, cut_z]), "cut"))
+        elif target.shape != "through_hole":
             # 密集蛇形覆盖圆角矩形；没有以目标体素区域直接删除材料。
             rows = np.linspace(
                 -b, b, max(1, int(np.ceil(2 * b / (env.stock.cell_size_m / 2))) + 1)

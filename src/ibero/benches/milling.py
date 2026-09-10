@@ -21,6 +21,7 @@ def add_spindle(
     rotor_mass_kg=0.02,
     housing_mass_kg=0.08,
     torque_limit_nm=0.15,
+    ft_quaternion=(1, 0, 0, 0),
 ):
     """可复用工具：端面/侧刃圆柱与非切削刀柄分开，转速来自实际转子关节。"""
     mount = parent.add_body(name=prefix + "mount")
@@ -36,6 +37,7 @@ def add_spindle(
         name=prefix + "ft_site",
         pos=[0, 0, tool.cutting_length_m + tool.shank_length_m],
         size=[0.001],
+        quat=ft_quaternion,
     )
     mount.add_site(name=prefix + "tip", pos=[0, 0, 0], size=[0.001])
     rotor = mount.add_body(name=prefix + "rotor")
@@ -99,7 +101,19 @@ class MillingFixture:
         start=(-0.025, 0, 0.025),
         max_cells=60000,
         angular_samples=128,
+        ft_quaternion=(1, 0, 0, 0),
+        edge_transition_chip_m=1e-8,
+        axis_stiffness_n_m=5000.0,
+        axis_damping_ns_m=80.0,
+        axis_force_limit_n=50.0,
     ):
+        from ibero.materials.parameters import finite_number
+
+        self.axis_parameters = {
+            "stiffness_n_m": finite_number(axis_stiffness_n_m, "axis_stiffness_n_m"),
+            "damping_ns_m": finite_number(axis_damping_ns_m, "axis_damping_ns_m"),
+            "force_limit_n": finite_number(axis_force_limit_n, "axis_force_limit_n"),
+        }
         self.stock = VoxelStock(stock_parameters, cell_size_m, max_cells=max_cells)
         self.tool, self.coefficients, self.limits = tool, coefficients, limits
         spec = mujoco.MjSpec()
@@ -123,10 +137,16 @@ class MillingFixture:
             actuator = spec.add_actuator(
                 name=name, target=name, trntype=mujoco.mjtTrn.mjTRN_JOINT
             )
-            actuator.set_to_position(kp=5000, kv=80)
+            actuator.set_to_position(kp=axis_stiffness_n_m, kv=axis_damping_ns_m)
             actuator.forcelimited = True
-            actuator.forcerange = [-50, 50]
-        add_spindle(spec, carriage, tool, torque_limit_nm=limits.max_torque_nm)
+            actuator.forcerange = [-axis_force_limit_n, axis_force_limit_n]
+        add_spindle(
+            spec,
+            carriage,
+            tool,
+            torque_limit_nm=limits.max_torque_nm,
+            ft_quaternion=ft_quaternion,
+        )
         spec.worldbody.add_light(pos=[0.1, -0.1, 0.2])
         self.model = spec.compile()
         self.data = mujoco.MjData(self.model)
@@ -143,6 +163,7 @@ class MillingFixture:
             blade_geom="mill_blade",
             spindle_joint="mill_spindle",
             angular_samples=angular_samples,
+            edge_transition_chip_m=edge_transition_chip_m,
         )
         self.scene = None
         self.reset(seed=0)
@@ -169,6 +190,10 @@ class MillingFixture:
             start=cfg["initialization"]["tip_position_m"],
             max_cells=cfg["numerics"]["max_cells"],
             angular_samples=cfg["numerics"]["angular_samples"],
+            edge_transition_chip_m=cfg["numerics"]["edge_transition_chip_m"],
+            axis_stiffness_n_m=cfg["machine"]["axis_stiffness_n_m"],
+            axis_damping_ns_m=cfg["machine"]["axis_damping_ns_m"],
+            axis_force_limit_n=cfg["machine"]["axis_force_limit_n"],
         )
         env.scene = scene
         return env
@@ -197,6 +222,9 @@ class MillingFixture:
             "timestep_s": float(self.model.opt.timestep),
             "start_m": self.start.tolist(),
             "angular_samples": self.process.nphi,
+            "edge_transition_chip_m": self.process.edge_transition_chip_m,
+            "ft_quaternion": self.model.site("mill_ft_site").quat.tolist(),
+            "axis_parameters": self.axis_parameters,
             "scene_recipe_hash": None if self.scene is None else self.scene.scene_hash,
         }
         return {
