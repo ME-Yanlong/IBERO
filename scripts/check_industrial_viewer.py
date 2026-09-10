@@ -10,6 +10,26 @@ from ibero.envs.latch_release import LatchReleaseEnv
 from ibero.industrial_review import IndustrialReviewer
 
 
+def progress_snapshot(app, state, now):
+    """只读运行遥测；有窗口回调不等于物理成功，也不等于实测输入响应延迟。"""
+    return {
+        "scope": "viewer_check_progress_not_acceptance_evidence",
+        "phase": state["phase"],
+        "wall_seconds": now - state["started"],
+        "simulation_seconds": float(app.env.data.time),
+        "display_frame": app.index,
+        "recorded_frames": len(app.trace.states),
+        "completed_episodes": app.completed_episodes,
+        "running": app.running and not app.closed,
+        "finished": app.finished,
+        "closed": app.closed,
+        "worker_pending": app.future is not None and not app.future.done(),
+        "max_check_callback_gap_s": state.get("max_callback_gap_s", 0.0),
+        "phase_durations_s": dict(state.get("phase_durations_s", {})),
+        "note": "Approximate concurrent counters; read final report.json for pass/fail",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -77,6 +97,27 @@ def main():
 
     def check():
         try:
+            now = time.monotonic()
+            previous = state.get("previous_callback", now)
+            state["max_callback_gap_s"] = max(
+                state.get("max_callback_gap_s", 0.0), now - previous
+            )
+            state["previous_callback"] = now
+            phase = state["phase"]
+            previous_phase = state.get("observed_phase")
+            if phase != previous_phase:
+                if previous_phase is not None:
+                    state.setdefault("phase_durations_s", {})[previous_phase] = (
+                        now - state["phase_started"]
+                    )
+                state.update(observed_phase=phase, phase_started=now)
+            if now - state.get("last_progress_at", -float("inf")) >= 5:
+                # 进度文件可更新，最终报告/轨迹仍只在唯一运行目录写入；不覆盖其他运行。
+                (out / "progress.json").write_text(
+                    json.dumps(progress_snapshot(app, state, now), indent=2),
+                    encoding="utf-8",
+                )
+                state["last_progress_at"] = now
             if time.monotonic() - state["started"] > (14400 if args.full else 90):
                 raise TimeoutError("Industrial viewer interaction check timed out")
             phase = state["phase"]
@@ -175,7 +216,11 @@ def main():
     report["shape"] = args.shape if args.scene == "plate_milling" else None
     report["full"] = args.full
     report["wall_seconds"] = time.monotonic() - state["started"]
+    report["runtime_observability"] = progress_snapshot(app, state, time.monotonic())
     (out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (out / "progress.json").write_text(
+        json.dumps(report["runtime_observability"], indent=2), encoding="utf-8"
+    )
     print(out, report)
     raise SystemExit(0 if report["passed"] else 1)
 
