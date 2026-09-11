@@ -1,6 +1,7 @@
 """无物理、无去除事件的加工网格预估；不是机器人或工艺验收。"""
 
 import argparse
+import copy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -9,6 +10,8 @@ from ibero.control.milling_bench import bench_target
 from ibero.core.scene_loader import SceneLoader
 from ibero.core.task_loading import load_task_spec
 from ibero.core.reproducibility import simulation_source_hash
+from ibero.core.milling_config import validate_milling_bench
+from ibero.core.plate_milling_config import validate_plate_milling
 from ibero.materials.parameters import StockParameters, strict_parameters
 from ibero.materials.stock import VoxelStock
 from ibero.processes.shape_check import inspect_shape
@@ -21,6 +24,15 @@ def forecast(scene, cell_sizes):
     task = load_task_spec(scene) if cfg["kind"] == "plate_milling" else None
     rows = []
     for cell in cell_sizes:
+        candidate = copy.deepcopy(cfg)
+        candidate["numerics"]["cell_size_m"] = cell
+        recipe_error = None
+        try:
+            validate = validate_plate_milling if task else validate_milling_bench
+            validate(candidate, scene.constraints)
+        except ValueError as error:
+            # 保留几何预估，但明确某格距不能直接用于原机器人安装/控制包络。
+            recipe_error = str(error)
         stock = VoxelStock(
             strict_parameters(StockParameters, cfg["materials"]["stock"]),
             cell,
@@ -40,6 +52,8 @@ def forecast(scene, cell_sizes):
                 dict(
                     shape=shape,
                     cell_size_m=cell,
+                    candidate_recipe_valid=recipe_error is None,
+                    candidate_recipe_error=recipe_error,
                     cells=len(stock.centers),
                     nominal_center_classification_volume_m3=volume,
                     target_volume_m3=target.volume_m3,

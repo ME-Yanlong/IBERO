@@ -40,6 +40,8 @@ python -m ibero.demo --env plate_milling --viewer --render-quality quality
 
 `python scripts/forecast_milling_geometry.py --scene scenes/plate_milling` 可先做无积分的名义网格体积预估，目标从这份场景的 P4 读取。它不提交删料，也不是加工成功检查；特别要注意加工深度与格距不对齐以及体素中心采样的非单调误差。真实力、孔洞碰撞及回放仍须单独运行。
 
+预估中的 `candidate_recipe_valid/error` 另查原配置能否直接使用该格距：默认 0.5 mm 候选会因刀轴投影超过四分之一格而被拒绝，即使名义体积误差合格。工具不替用户调小姿态容差；静态配置合法也不是动态验收通过。
+
 默认 `--render-quality fast` 只关闭显示阴影和地板反射；`quality` 可恢复这些效果，不改变材料、接触或物理步长。前三格依次为全景、刀具局部、毛坯检查俯视；第三格只在独立显示副本隐藏机器人/刀具，以免刀具遮住孔洞。第四格为实际占据 XZ 剖面及全回合载荷需求峰值，不把超限拒绝的候选载荷当成已施加外力。C 可关闭纯视觉切屑。
 
 当前验收机的 OpenGL 使用 Intel 核显，虽然设备中也有 RTX 5080 Laptop GPU；不能据设备列表假定已经使用独显。工程性能报告会记录实际 OpenGL renderer、并发负载和各项耗时，项目不自动修改系统显卡偏好。fast 不是物理加速选项；目前完整细步长任务依然明显慢于实时。

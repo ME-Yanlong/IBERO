@@ -22,6 +22,11 @@ def test_nominal_grid_forecast_reports_depth_quantization_without_events(kind):
     assert scene.config == config
     selected = {(r["cell_size_m"], r["shape"]): r for r in row["results"]}
     assert all(r["material_events"] == 0 for r in row["results"])
+    # 机器人 0.5 mm 格距还会触发既定刀轴投影上限；几何误差合格不能掩盖这一点。
+    fine = selected[0.0005, "through_hole"]
+    assert fine["candidate_recipe_valid"] is (kind == "milling_bench")
+    if kind == "plate_milling":
+        assert "quarter voxel" in fine["candidate_recipe_error"]
     assert selected[0.00075, "slot"]["relative_volume_error"] == pytest.approx(
         0.08683053048
     )
