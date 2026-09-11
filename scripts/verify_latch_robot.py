@@ -84,6 +84,8 @@ def run_one(job):
             finally:
                 views.close()
     except Exception as error:
+        # 物理成功后保存/渲染失败仍是验收失败，不能遗留此前的 passed=True。
+        report["passed"] = False
         report["exception"] = f"{type(error).__name__}: {error}"
     finally:
         report["wall_seconds"] = time.monotonic() - started

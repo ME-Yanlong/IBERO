@@ -1262,3 +1262,13 @@ G7 汇总加固后，`844eef3_raw_recipe_audit/` 因旧报告没有展开保存 
 `python -m ibero.verify_industrial --suite ...` 新增单测、几何、碰撞、加工载荷、三形状台架、两类卡扣机器人、机器人加工矩阵/变体及显式 GUI 分组，旧 `--suite latch` 保持。只执行指定分组，不把一组结果称为 G9；日志/子报告独立保留，已有输出拒绝覆盖，失败非零退出。外部曲线未提供时 `passed=null` / `not_available`、退出码 3；导入合法也只是 `imported_not_calibrated`，不是实测标定通过。编排/资源生命周期/具体构建相关 **15 passed / 2.02 s**，Ruff 全项目通过。统一入口真实短 GUI `stock/viewer/unified_lifecycle_short.json` 也已通过。
 
 `stock/milling_process/07b3af6_measured_default_hole/` 完整通孔通过：42.76 s 仿真，整例 1062.839 s；不含构建/策略/记录/探针/回放的环境步进 RTF **0.04033**，整例原口径约 0.04023，仍明显慢于实时。后续最终回归另冻结候选源码；G9 尚未通过，main 与 0.1.0 版本号保持不动。
+
+### 18.43 最终候选单测通过，资源拒绝与验收异常路径继续保留
+
+冻结 `3585854` 的统一 `quick` 分组 **188 passed / 311.77 s**，`final_s9/3585854/quick.json` 与相邻 `quick_evidence/tests.xml` 保留。卡扣与线束组合各完整 34 用例、三形状加工台架、减半步长/过渡及两轮完整加工 GUI 已启动；不得把在跑的分组标为通过。
+
+六 worker 加工矩阵初次启动检查发现可提交余量约 **7.043 GB**，低于所需 **11.811 GB**，正确拒绝，**零物理用例开始**。`final_s9/3585854/milling-robot.json` 及 `milling-robot_evidence/result/resource_preflight.json` 保留。没有关闭旧验证进程或修改 OS；当前两类卡扣分别用两 worker，其余先执行单 worker 台架，待旧冻结组释放提交额度后另建加工矩阵输出。
+
+验收脚本审计补充一条非物理修复：卡扣物理成功后若保存/截图抛异常，必须把已有 `passed=True` 清为 false。最终 `summarize_latch_current.py` 另外重读每个原始报告和身份，不能以允许两个真实失败为由接受缺失的原报告；检查异常、全部 34 个用例身份、默认/变体分母和四个错误动作。合成汇总反例和统一入口相关 **7 passed / 0.69 s**。已启动的冻结脚本不热更，最终汇总仍拒绝其任何原始异常；本修改只涉及验收脚本，不改变仿真源码身份。
+
+《版本介绍》第 20 节、顶层 README 及实施契约索引现已同步具体构建/状态/施力边界、P2/P3/P4 分工、命令与资源/许可限制。本地链接检查无缺失。最终全量证据尚在积累，G9 仍未关闭。
