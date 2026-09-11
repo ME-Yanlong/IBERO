@@ -109,6 +109,36 @@ See [Core-0.1 implementation contract](docs/04_Core-0.1_实施契约.md) and
 configuration semantics. These are engineering regressions, not generalization
 benchmark scores or validation against a real harness.
 
+## Core-0.1 industrial material extension
+
+The development branch adds a passive elastic latch, robot press-and-unplug,
+a Flex-harness unplug-and-place chain, and fixed-stock three-axis milling.
+Milling removes actual collision cells and applies process-model loads to the
+original robot actuators; visual chips are display-only. Material and cutting
+coefficients remain **provisional**, not validated against a real product.
+
+```powershell
+python -m ibero.demo --env latch_release --viewer
+python -m ibero.demo --env harness_unplug --viewer
+python -m ibero.demo --env plate_milling --shape through_hole --viewer
+python -m ibero.verify_industrial --suite quick
+python -m ibero.verify_industrial --suite milling-bench --workers 1
+python -m ibero.verify_industrial --suite gui --scene plate_milling --full
+```
+
+The industrial windows wait for Enter, retain the final state, and support
+pause, single-step, read-only history and another episode. Fine physical steps
+make these tasks substantially slower than real time; replay speed is not
+simulation speed. GUI checks are explicit, never implied by a headless pass.
+Choose one validation suite at a time unless commit-memory headroom permits;
+existing evidence is never overwritten. The unified `--output` is a new JSON
+report file, with adjacent logs and per-case evidence.
+
+See the [Chinese source/architecture guide, sections 19–20](docs/04_Core-0.1_版本介绍.md)
+and the [approved S0–S9 plan and actual evidence log](docs/04_Core-0.1_工业材料与加工机制调研.md).
+Stage acceptance and final frozen regression are separately recorded there;
+one successful demo does not imply the complete extension has passed.
+
 ## Licenses for bundled model assets
 
 `assets/vendor/unitree_g1/` retains the Unitree BSD-3-Clause license and

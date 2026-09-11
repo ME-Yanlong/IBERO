@@ -4,7 +4,7 @@
 
 ## 菜谱怎样进入物理
 
-`scene_config.yaml` → `core/plate_milling_config.py` 严格校验 → `envs/plate_milling.py` 组装 G1、主轴、支撑及实体体素毛坯 → `processes/milling.py` 以实际刀尖运动和剩余材料计算载荷/去除 → MuJoCo 积分 → `task_spec.py` 只读判断实际形状、退刀和停转。
+`scene_config.yaml` → `core/plate_milling_config.py` 严格校验 → `SceneCompiler / core/milling_builder.py` 组装 G1、主轴、支撑及实体体素毛坯 → `PlateMillingEnv / MillingRuntime` 执行控制与共同物理事务 → `processes/milling.py` 以实际刀尖运动和剩余材料计算载荷/去除 → MuJoCo 积分 → `task_spec.py` 只读判断实际形状、退刀和停转。
 
 材料、刀具、工艺系数和能力参数全部显式配置。采用与 `milling_bench` 相同的 `AISI1045-provisional` 系数，未做真实钢材标定。工作站额外采用 15 N 加工力限制，不通过缩小钢材系数适配机器人。固定工件的质量/剩余体积在材料账本；没有可随意释放的自由余料。
 

@@ -1205,7 +1205,7 @@ P4 目标 → 路径控制器 → 原机器人执行器命令
                     逐步审计 → 只读任务评价
 ```
 
-负责这一闭环的核心是 [processes/milling.py](../src/ibero/processes/milling.py)。它读取实际位姿/速度与剩余材料，**不读取目标孔槽区域来决定删料**。目标形状只影响上层路径，并用于后续独立检查。
+共同子步时序由 [core/milling_runtime.py](../src/ibero/core/milling_runtime.py) 拥有；负责材料—速度—载荷闭环的是 [processes/milling.py](../src/ibero/processes/milling.py)。它读取实际位姿/速度与剩余材料，**不读取目标孔槽区域来决定删料**。目标形状只影响上层路径，并用于后续独立检查。
 
 刃区工作时，“刃区—毛坯”的正常切削阻力由过程模型提供，避免同时算硬接触和剪切载荷两份阻力。刀柄、夹具和机器人接触继续有效；静止或未到可切转速时刃区也是实体。豁免的是特定接触对，不是刀具可以穿过所有物体。
 
@@ -1252,7 +1252,7 @@ python scripts/verify_milling_process.py --scene scenes/plate_milling --shape al
 python scripts/verify_robot_milling.py --workers 3
 ```
 
-最后三条分别是静态包络、单种子全链和三形状各十种子的检查，不互相代替。GUI 检查需要显式运行；无头数值通过不能声称窗口已验收。完整工业统一验收入口的收敛仍在 S9，现有 `ibero.verify_industrial` 不能被误解为所有扩展已一键验完。
+最后三条分别是静态包络、单种子全链和三形状各十种子的检查，不互相代替。GUI 检查需要显式运行；无头数值通过不能声称窗口已验收。S9 已增加统一的**分组**入口，见第 20 节；它不默认启动所有耗时检查，也不把某一组通过称为全部 G9 通过。
 
 加工环境目前由专用 demo 入口构造，不冒充与旧线束完全相同的 Gym 动作接口。标准化训练、LeRobot、真实 SDK 和策略采集没有在这一轮提前铺开。
 
@@ -1263,3 +1263,83 @@ python scripts/verify_robot_milling.py --workers 3
 它证明项目已能把**材料状态、可解释的力学/过程响应、实际机器人执行器、碰撞、独立任务裁判与可复查证据**连成具体闭环，而不只播放“按一下卡扣”或“钢板上出现一个洞”的动画。
 
 尚未证明的包括真实商品连接器精度、真实钢材加工力标定、任意三维弹性体、真实断裂/自由余料、热切屑、刀具磨损、颤振、五轴及实机安全。这些不是补一个 YAML 字段就自动得到的能力，也不因为三个场景可运行就进入 0.2。工程门槛与真实标定状态始终分开登记。
+
+## 20. S9 收敛后的源码索引、运行与验收
+
+本节描述已经实现的边界，不提前声明最终冻结回归完成。阶段与最终证据始终以《工业材料与加工机制调研》第 18 节及后续交付登记为准。
+
+### 20.1 菜谱如何进入同一个 Core
+
+```text
+scenes/<场景>/scene_config.yaml + constraints.yaml + task_spec.py
+    ↓ SceneLoader：严格字段、单位、有限值、模型能力、来源
+    ↓ SceneCompiler：按实际 kind 选择具体构建器
+    ├─ 旧线束 → CompiledScene（G1 + cable 参数/句柄）
+    ├─ 卡扣/组合线束 → CompiledLatchCell / CompiledHarnessCell
+    └─ milling_bench / plate_milling → CompiledMilling
+          ├─ core/milling_builder.py：装配并编译模型
+          ├─ robots/spindle.py：P2 真实主轴、转子惯量、限矩电机、F/T
+          └─ MillingRuntime：接管模型/材料，创建数据与过程实例
+                ├─ MillingFixture：三轴台架执行器命令
+                └─ PlateMillingEnv：G1 原执行器命令、机器人审计、P4 评价
+```
+
+`SceneCompiler.compile(SceneLoader().validate(path))` 现在可以直接编译两种加工场景，但编译不等于运行、不等于成功。`CompiledMilling` 包含 model、stock、binding、刀具、工艺系数、能力、初始位置和具体过程选项；不塞入假 `CableParameters`。这些成员有可变的仿真对象，不能把同一个编译实例同时交给多个独立环境共享运行。
+
+`MillingRuntime._initialize_runtime()` 只接管状态、创建 `MjData` / `PhysicalLoads` / `MillingProcess`，不会提前调用子类 reset。机器人需先取得 P4 目标和实际伺服设置，再初始化姿态、控制器与审计。正式台架 `from_scene()` 只编译一次；原来直接构造 Python 台架的参数默认值保留，所以它不自动等同于正式场景的刚度和步长。
+
+这不是通用多引擎框架：旧线束、卡扣和加工仍各有具体环境与动作含义。真正共享的是已出现重复的模型分派、载荷责任、验证身份及加工事务。`PlateMillingEnv` 不再继承 `MillingFixture`，但其 step 仍调用同一共同积分事务，再补机器人审计信息。
+
+### 20.2 P2、P3、P4 各改什么
+
+| 角色 | 主要源码/配置 | 可以决定 | 不能暗中决定 |
+| --- | --- | --- | --- |
+| P2 机械师 | `robots/g1_industrial.py`、`g1_milling.py`、`spindle.py`；菜谱 `robot/tool/workcell` | 安装、实体尺寸/质量、原执行器与工具能力、支撑位置 | 调大原 G1 力矩上限让动作成功；叠装手和工具；运行时瞬移物体 |
+| P3 材料专家 | `materials/elastic_beam.py`、`snap_latch` 机构、`stock.py/stock_collision.py`、`processes/milling*.py`；菜谱 `materials/process` | 材料参数、被动恢复力、剩余材料状态、注明来源的工艺响应 | 读取目标孔区域直接删料；把视觉切屑当真实切屑；把 provisional 系数叫实测 |
+| P4 菜谱作者 | `scene_config.yaml + constraints.yaml + task_spec.py` | 合法对象组合、目标、模型有效范围、成功/失败标准 | 用任务完成阶段触发机械解锁；关闭碰撞或修改物理状态制造成功 |
+| Core | loader/compiler、`milling_runtime.py`、`loads.py`、`stock_trace.py`、audit | 按固定时序整合、拒绝非法状态、保留可审查身份和历史 | 用“求解失败”自动放松材料、几何或数值门槛 |
+
+物理参数、工艺选择和数值分辨率分开：例如提高进给会改变实际切屑厚度与载荷；改体素格距会影响可表达的几何误差；改杨氏模量会改变舌片刚度。这三者不是可互换的“让 demo 顺一点”的旋钮。报警/超模型范围不代表已模拟真实断裂。
+
+### 20.3 状态、时限和关闭由谁负责
+
+引擎保存刚体/关节状态与接触；`VoxelStock` 保存引擎状态之外的材料占据和事件账本；`StockCollisionBinding` 保证两者提交一致；控制器保存路径阶段，P4 保存任务历史；显示端另有独立模型和材料副本。不能仅复制 `qpos` 就宣称复制了加工回合。
+
+reset 恢复原毛坯/碰撞、清零过程与载荷历史，再重建具体控制和任务初态。完成、超时、材料事务异常或只读回放恢复后，必须 reset 才能继续。`max_seconds` 在底层限制完整物理子步，不能通过一个超大的 `--steps` 延长场景时间；不够一个物理步时停止，不修改 dt 填零头。
+
+GUI 初始化先验证 seed 与轨迹身份，再分配桌面/线程/GL。关闭时先等正在访问物理状态的 worker 完成，再释放显示，最后销毁窗口；重复 close 安全，构造和主循环异常也清理。正常结束仍保持窗口，Enter 创建新回合。资源异常替身测试与真实桌面交互是两类证据，不能互相冒充。
+
+### 20.4 统一分组验收，而非隐式启动整个通宵批次
+
+在已按 README 安装的源码目录运行，`--output` 对统一入口均指向一个新的 JSON 文件；相邻 `<文件名>_evidence/` 保存日志和实际子报告。旧脚本有的接收目录，不能直接把两种输出语义混用。
+
+```powershell
+python -m ibero.verify_industrial --suite quick
+python -m ibero.verify_industrial --suite latch --workers 2
+python -m ibero.verify_industrial --suite stock-geometry
+python -m ibero.verify_industrial --suite stock-collision
+python -m ibero.verify_industrial --suite milling-loads
+python -m ibero.verify_industrial --suite milling-bench --workers 1
+python -m ibero.verify_industrial --suite latch-robot --group all --workers 2
+python -m ibero.verify_industrial --suite harness-robot --group all --workers 2
+python -m ibero.verify_industrial --suite milling-robot --workers 3
+python -m ibero.verify_industrial --suite milling-variants --workers 2
+python -m ibero.verify_industrial --suite gui --scene plate_milling --full
+python -m ibero.verify_industrial --suite reference
+```
+
+`quick` 是完整单元/局部数值测试集合，相对跨种子长测较快，仍可能需要数分钟；不是一秒烟雾测试。`latch` 是梁解析、接触反事实、收敛及 Flex 候选研究，不是机器人抓取。两类卡扣机器人 `--group all` 保留默认 20、两个变体各 5、四种错误动作的分母。加工矩阵固定三形状各十个种子；变体系数另算。`gui --full` 才要求两轮完整成功，短交互检查不能替代它。
+
+旧基线继续运行 `python -m ibero.calibrate` 和 `python -m ibero.verify_core01 --seeds 3`，旧窗口由 `ibero.verify_viewer` 检查。单组命令不自动证明全部 G0—G9；最终汇总还需重读每个阶段原始证据，不能只看一个总 `passed`。
+
+外部曲线缺失时报告 `passed: null / status: not_available`，退出码 3 表示没有参考，不是物理失败或标定通过。可显式提供 `--reference-csv <文件> --reference-metadata <文件>`；格式合法后也是 `imported_not_calibrated`。CSV 列为 `displacement_m,force_n`，JSON 必须有非空 `source`、`kind` 和 SI 单位；拟合/留出验证由 `materials/references.py` 独立处理，不因文件写了 `measured` 就证明数据真实或模型准确。
+
+### 20.5 性能、容量与版本边界
+
+Windows 长测先检查可提交内存，不只是看空闲 RAM，按每 worker 1.5 GiB 加总并留 2 GiB；不足时保留启动失败，换新输出目录减并发或等其它检查结束，不改系统页面文件。数值库线程缺省仅作用于新子进程；用户已有任何一项显式线程环境都保留。模型格数、轨迹未压缩容量和事件数也各有上限，拒绝超容量比机器失去响应更可审查。
+
+加工报告的 `headless_step_real_time_factor` 只计算环境 step（含内层控制/材料/载荷/积分/审计）；旧 `real_time_factor` 明确标注整例口径，含探针/回放等额外步骤，不含最终制品保存。显示回放速度不等于物理速度。当前细步长工业模型仍明显慢于实时，必须把性能改进与物理门槛分开验收。
+
+正式轨迹严格核对源码、菜谱、目标、资产与 MuJoCo 版本。重构前后数值快照比较只是独立诊断，不打开跨源码回放/续跑通道。查看旧轨迹需使用其冻结版本；在新源码上生成新轨迹，而不是删除身份校验。
+
+本轮没有增加商业引擎、真实 SDK 或训练依赖，版本仍为 0.1.0。第三方 G1 / 2F-85 资产许可保留；项目自有代码尚未选择发布许可证，不自行赋予开源授权。工业材料实测、精确商品复刻、五轴、自由余料、塑性/断裂和真实切屑仍是显式未实现/待标定项，不随 S9 工程回归自动变成 0.2。
