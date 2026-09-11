@@ -35,6 +35,14 @@ def run_shape(job):
         "passed": False,
         "rows": [],
         "seed": seed,
+        "timing_seconds": {
+            "construction_and_reset": None,
+            "policy_commands": 0.0,
+            "environment_steps": 0.0,
+            "trace_recording": 0.0,
+        },
+        "environment_step_calls": 0,
+        "rollout_sim_seconds_before_replay": None,
         "execution_environment": {
             "python_version": platform.python_version(),
             "numpy_version": np.__version__,
@@ -61,6 +69,9 @@ def run_shape(job):
         else:
             env = MillingFixture.from_scene(scene_root)
         env.reset(seed=seed)
+        report["timing_seconds"]["construction_and_reset"] = (
+            time.perf_counter() - started
+        )
         report["manifest"] = env.manifest()
         # 报告自带实际解析菜谱；不能只记录不可逆 hash 而让审阅者猜当时的步长/进给。
         report["scene_config"] = env.scene.config
@@ -95,8 +106,24 @@ def run_shape(job):
         )
         max_time = env.scene.constraints["task"]["max_seconds"]
         while env.data.time < max_time:
+            command_started = time.perf_counter()
             command, rpm = policy.command(env)
-            info = env.step(command, rpm, substeps=steps)
+            report["timing_seconds"]["policy_commands"] += (
+                time.perf_counter() - command_started
+            )
+            step_started = time.perf_counter()
+            report["environment_step_calls"] += 1
+            try:
+                info = env.step(command, rpm, substeps=steps)
+            finally:
+                # 单独计入 Core 的控制/材料/载荷/积分/审计，不把探针、回放或显示算成步进。
+                report["timing_seconds"]["environment_steps"] += (
+                    time.perf_counter() - step_started
+                )
+                value = float(env.data.time)
+                report["rollout_sim_seconds_before_replay"] = (
+                    value if np.isfinite(value) else None
+                )
             info["controller_phase"] = policy.phase
             info["tracking_error_m"] = float(
                 np.linalg.norm(env.data.site("mill_tip").xpos - policy.nominal)
@@ -110,7 +137,11 @@ def run_shape(job):
                     "tracking_error_limit"
                 )
             report["rows"].append(info)
+            record_started = time.perf_counter()
             trace.append(info)
+            report["timing_seconds"]["trace_recording"] += (
+                time.perf_counter() - record_started
+            )
             if len(report["rows"]) % 200 == 0 or env._done:
                 (out / "progress.json").write_text(
                     json.dumps(
@@ -249,6 +280,21 @@ def run_shape(job):
             report["passed"]
             and report["frozen_source"]
             and not report.get("artifact_errors")
+        )
+        # 旧字段口径保持兼容，明确它并非纯步进 RTF；新增各项也不宣称相加恰等于总耗时。
+        report["legacy_real_time_factor_scope"] = (
+            "case_through_replay_probe_before_final_artifacts"
+        )
+        report["timing_seconds"]["end_to_end_before_report_write"] = (
+            time.perf_counter() - started
+        )
+        elapsed = report["timing_seconds"]["environment_steps"]
+        sim = report["rollout_sim_seconds_before_replay"]
+        report["headless_step_real_time_factor"] = (
+            sim / elapsed if elapsed > 0 and sim is not None and sim >= 0 else None
+        )
+        report["headless_step_timing_scope"] = (
+            "env.step_including_inner_control_material_loads_integration_audit_excluding_high_level_policy_recording_build_probe_replay_display"
         )
         (out / "report.json").write_text(
             json.dumps(report, indent=2, allow_nan=False), encoding="utf-8"

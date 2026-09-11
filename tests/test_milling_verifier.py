@@ -36,6 +36,9 @@ def test_verifier_keeps_original_failure_when_both_artifacts_fail(
     assert raw["scene_config"]["kind"] == "milling_bench"
     assert raw["constraints"]["task"]["max_seconds"] > 0
     assert raw["rows"] == [] and raw["frozen_source"]
+    assert raw["environment_step_calls"] == 1
+    assert raw["timing_seconds"]["environment_steps"] > 0
+    assert raw["headless_step_real_time_factor"] == 0
 
 
 def test_timeout_is_explicit_in_report_and_saved_trace(monkeypatch, tmp_path):
@@ -59,6 +62,15 @@ def test_timeout_is_explicit_in_report_and_saved_trace(monkeypatch, tmp_path):
     assert not result["passed"]
     assert result["termination_reason"] == "episode_time_limit"
     assert not result.get("exception")
+    assert result["environment_step_calls"] == 2
+    assert result["rollout_sim_seconds_before_replay"] == pytest.approx(0.02)
+    assert result["headless_step_real_time_factor"] == pytest.approx(
+        0.02 / result["timing_seconds"]["environment_steps"]
+    )
+    assert (
+        result["timing_seconds"]["end_to_end_before_report_write"]
+        >= result["timing_seconds"]["environment_steps"]
+    )
     env = short_scene(verifier.MillingFixture, root / "scenes/milling_bench")
     trace = verifier.StockTrace(env).load(tmp_path / "slot/trace.npz")
     assert trace.infos[-1]["success"] is False
