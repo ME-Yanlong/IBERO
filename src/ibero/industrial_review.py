@@ -14,7 +14,6 @@ class IndustrialViews:
     def __init__(self, model, origin):
         self.model = model
         self.data = mujoco.MjData(model)
-        self.renderer = mujoco.Renderer(model, 320, 480)
         self.cameras = []
         for lookat, distance, azimuth, elevation in (
             ([0.2, 0, 0.82], 1.35, 135, -20),
@@ -33,6 +32,8 @@ class IndustrialViews:
             if path.exists()
             else ImageFont.load_default()
         )
+        # 相机/字体检查完成后才分配 GL；此前失败不遗留 renderer。
+        self.renderer = mujoco.Renderer(model, 320, 480)
 
     def set_state(self, state):
         mujoco.mj_setState(self.model, self.data, state, Trace.spec)
@@ -113,35 +114,9 @@ class IndustrialReviewer:
         self.steps = steps or env.max_episode_steps
         self.rate = playback_rate
         self.save_path = save_trace
-        self.root = tk.Tk()
-        self.root.title("IBERO 工业材料审阅 / Enter 运行一次")
-        self.root.protocol("WM_DELETE_WINDOW", self.close)
-        self.label = tk.Label(self.root)
-        self.label.pack()
-        self.status = tk.StringVar(
-            value="初始等待：Enter 开始；拖动前三视图旋转，滚轮缩放"
-        )
-        tk.Label(
-            self.root, textvariable=self.status, font=("Microsoft YaHei", 11)
-        ).pack()
-        buttons = tk.Frame(self.root)
-        buttons.pack()
-        for title, key in [
-            ("运行/重跑 Enter", "Return"),
-            ("暂停 P", "p"),
-            ("单步 N", "n"),
-            ("上一帧 B", "b"),
-            ("回放 R", "r"),
-        ]:
-            tk.Button(buttons, text=title, command=lambda key=key: self.key(key)).pack(
-                side="left"
-            )
-        for key in ("Return", "p", "P", "n", "N", "b", "B", "r", "R"):
-            self.root.bind("<" + key + ">", lambda event: self.key(event.keysym))
-        self.label.bind("<ButtonPress-1>", self._drag_start)
-        self.label.bind("<B1-Motion>", self._drag)
-        self.label.bind("<MouseWheel>", self._zoom)
-        self.pool = ThreadPoolExecutor(max_workers=1)
+        self.root = None
+        self.pool = None
+        self.views = None
         self.future = None
         self.pending_run = False
         self.resetting = False
@@ -156,21 +131,59 @@ class IndustrialReviewer:
         self.last_replay_tick = 0
         self.next_live_tick = 0.0
         self.physics_wall_seconds = 0.0
-        env.reset(seed=seed)
-        self.policy = self._make_policy()
-        self.trace = self._make_trace()
-        self.trace.append(env.last_info)
-        if replay:
-            self.trace.load(replay)
-            self.history = True
-        self._bind_model()
-        self.index = 0
-        self.draw()
-        self.root.after(20, self.tick)
+        try:
+            env.reset(seed=seed)
+            self.policy = self._make_policy()
+            self.trace = self._make_trace()
+            self.trace.append(env.last_info)
+            if replay:
+                self.trace.load(replay)
+                self.history = True
+            # 非法 seed / 回放身份优先在创建桌面、线程池和 GL 资源前拒绝。
+            self.root = tk.Tk()
+            self.root.title("IBERO 工业材料审阅 / Enter 运行一次")
+            self.root.protocol("WM_DELETE_WINDOW", self.close)
+            self.label = tk.Label(self.root)
+            self.label.pack()
+            self.status = tk.StringVar(
+                value="初始等待：Enter 开始；拖动前三视图旋转，滚轮缩放"
+            )
+            tk.Label(
+                self.root, textvariable=self.status, font=("Microsoft YaHei", 11)
+            ).pack()
+            buttons = tk.Frame(self.root)
+            buttons.pack()
+            for title, key in [
+                ("运行/重跑 Enter", "Return"),
+                ("暂停 P", "p"),
+                ("单步 N", "n"),
+                ("上一帧 B", "b"),
+                ("回放 R", "r"),
+            ]:
+                tk.Button(
+                    buttons, text=title, command=lambda key=key: self.key(key)
+                ).pack(side="left")
+            for key in ("Return", "p", "P", "n", "N", "b", "B", "r", "R"):
+                self.root.bind("<" + key + ">", lambda event: self.key(event.keysym))
+            self.label.bind("<ButtonPress-1>", self._drag_start)
+            self.label.bind("<B1-Motion>", self._drag)
+            self.label.bind("<MouseWheel>", self._zoom)
+            self.pool = ThreadPoolExecutor(max_workers=1)
+            self._bind_model()
+            self.index = 0
+            self.draw()
+            self.root.after(20, self.tick)
+        except BaseException as error:
+            try:
+                self.close()
+            except BaseException as cleanup_error:
+                error.add_note(f"Reviewer cleanup also failed: {cleanup_error}")
+            raise
 
     def _bind_model(self):
-        if hasattr(self, "views"):
+        if self.views is not None:
             self.views.close()
+            self.views = None
         self.views = IndustrialViews(
             self.env.model, self.env.resolved_config["initialization"]["origin_m"]
         )
@@ -340,11 +353,28 @@ class IndustrialReviewer:
             self.draw()
 
     def close(self):
+        """幂等释放；先等物理 worker 离开共享状态，再关 GL，最后销毁桌面。"""
+        if self.closed:
+            return
         self.closed = True
-        self.pool.shutdown(wait=True, cancel_futures=True)
-        self.views.close()
-        self.root.destroy()
+        self.running = False
+        self.replaying = False
+        self.pending_run = False
+        try:
+            if self.pool is not None:
+                self.pool.shutdown(wait=True, cancel_futures=True)
+        finally:
+            try:
+                if self.views is not None:
+                    self.views.close()
+                    self.views = None
+            finally:
+                if self.root is not None:
+                    self.root.destroy()
 
     def run(self):
-        self.root.mainloop()
-        return self.trace.infos[-1]
+        try:
+            self.root.mainloop()
+            return self.trace.infos[-1]
+        finally:
+            self.close()

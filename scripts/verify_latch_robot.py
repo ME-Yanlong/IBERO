@@ -117,6 +117,10 @@ def main():
         / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     )
     output.mkdir(parents=True, exist_ok=False)
+    from industrial_resources import require_worker_budget
+
+    # 与加工长测使用同一提交额度/新 worker 线程策略，不修改已运行进程。
+    require_worker_budget(output, args.workers)
     gates = yaml.safe_load(
         (ROOT / "validation/industrial_gates.yaml").read_text(encoding="utf-8")
     )

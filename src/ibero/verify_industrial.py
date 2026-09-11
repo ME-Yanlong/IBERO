@@ -1,4 +1,4 @@
-"""工业机制分阶段验收。当前仅实现 latch 套件；不将台架冒充机器人验收。"""
+"""工业机制分组验收：单测、物理长测、显式 GUI 与外部参考分开记录。"""
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor
@@ -151,11 +151,46 @@ def latch_report(*, workers=3):
 
 
 def main():
+    from ibero.validation_cli import SUITES, run_suite
+
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--suite", choices=["latch"], required=True)
+    parser.add_argument("--suite", choices=SUITES, required=True)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--workers", type=int, choices=range(1, 5), default=3)
+    parser.add_argument("--workers", type=int, choices=range(1, 9), default=3)
+    parser.add_argument(
+        "--group", choices=["all", "default", "variants", "faults"], default="all"
+    )
+    parser.add_argument(
+        "--scene",
+        choices=["latch_release", "harness_unplug", "plate_milling"],
+        default="plate_milling",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="GUI also requires two complete successful episodes",
+    )
+    parser.add_argument("--reference-csv", type=Path)
+    parser.add_argument("--reference-metadata", type=Path)
     args = parser.parse_args()
+    if args.full and args.suite != "gui":
+        parser.error("--full is only for explicit GUI validation")
+    if args.group != "all" and args.suite not in {"latch-robot", "harness-robot"}:
+        parser.error("--group only selects latch/harness robot matrices")
+    if bool(args.reference_csv) != bool(args.reference_metadata):
+        parser.error("Reference CSV and metadata must be supplied together")
+    if args.reference_csv and args.suite != "reference":
+        parser.error("Reference inputs require --suite reference")
+    if args.workers > (
+        4 if args.suite in {"latch", "milling-variants"} else 3
+    ) and args.suite in {
+        "latch",
+        "milling-bench",
+        "milling-variants",
+    }:
+        parser.error("Requested workers exceed this suite's existing limit")
+    if args.suite != "latch":
+        raise SystemExit(run_suite(args))
     path = (
         args.output
         or ROOT

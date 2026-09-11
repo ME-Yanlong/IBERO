@@ -52,9 +52,6 @@ class MillingViews:
         self.blade_body_geoms = np.flatnonzero(
             self.model.geom_bodyid == self.blade_body
         )
-        self.renderer = mujoco.Renderer(
-            self.model, 320, 480, max_geom=self.model.ngeom + 1000
-        )
         self.cameras = []
         for lookat, distance, azimuth, elevation in (
             ([0.25, 0, 0.85], 1.35, 135, -20),
@@ -78,6 +75,10 @@ class MillingViews:
         self.visual_chips = visual_chips
         self.chip_positions = []
         self.frame_index = 0
+        # 最后创建 GL 资源，避免字体/显示配置异常留下未接管的 renderer。
+        self.renderer = mujoco.Renderer(
+            self.model, 320, 480, max_geom=self.model.ngeom + 1000
+        )
 
     def set_frame(self, trace, index):
         count = trace.event_counts[index]
@@ -265,12 +266,19 @@ class MillingReviewer(IndustrialReviewer):
             env.scene.constraints["task"]["max_seconds"] / env.control_dt
         )
         super().__init__(env, **kwargs)
-        self.root.title("IBERO G1 加工审阅 / Enter 重跑 / C 视觉切屑")
-        self.root.bind("<c>", lambda event: self.toggle_chips())
-        self.root.bind("<C>", lambda event: self.toggle_chips())
-        self.tk.Button(
-            self.root, text="切屑显示 C（仅视觉）", command=self.toggle_chips
-        ).pack()
+        try:
+            self.root.title("IBERO G1 加工审阅 / Enter 重跑 / C 视觉切屑")
+            self.root.bind("<c>", lambda event: self.toggle_chips())
+            self.root.bind("<C>", lambda event: self.toggle_chips())
+            self.tk.Button(
+                self.root, text="切屑显示 C（仅视觉）", command=self.toggle_chips
+            ).pack()
+        except BaseException as error:
+            try:
+                self.close()
+            except BaseException as cleanup_error:
+                error.add_note(f"Milling reviewer cleanup also failed: {cleanup_error}")
+            raise
 
     def _make_policy(self):
         return MillingBenchScript(self.env, self.target)
@@ -279,8 +287,9 @@ class MillingReviewer(IndustrialReviewer):
         return StockTrace(self.env)
 
     def _bind_model(self):
-        if hasattr(self, "views"):
+        if self.views is not None:
             self.views.close()
+            self.views = None
         self.views = MillingViews(
             self.env, visual_chips=self.visual_chips, render_quality=self.render_quality
         )
