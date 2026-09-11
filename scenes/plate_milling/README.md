@@ -38,6 +38,8 @@ python -m ibero.demo --env plate_milling --viewer --render-quality quality
 
 `constraints.yaml` 的 `volume_error_fraction` 与 `boundary_error_cells` 是实际裁判使用的阈值，可以收紧但不能超过冻结的 5% / 两格上限。例如将体积误差改成 1%，当前毫米网格的示例通孔会因约 3.45% 离散误差而不通过；收紧阈值不会自动细化网格或改变材料，需另外验证更细模型。
 
+同一文件的 `max_seconds` 由底层加工时钟强制执行；`--steps` 只能提前结束 demo，不能延长场景时限。剩余预算不足一个物理子步时不再积分，超时锁存为失败并要求 reset，不用改步长或移动刀具补足剩余零头。
+
 `python scripts/forecast_milling_geometry.py --scene scenes/plate_milling` 可先做无积分的名义网格体积预估，目标从这份场景的 P4 读取。它不提交删料，也不是加工成功检查；特别要注意加工深度与格距不对齐以及体素中心采样的非单调误差。真实力、孔洞碰撞及回放仍须单独运行。
 
 预估中的 `candidate_recipe_valid/error` 另查原配置能否直接使用该格距：默认 0.5 mm 候选会因刀轴投影超过四分之一格而被拒绝，即使名义体积误差合格。工具不替用户调小姿态容差；静态配置合法也不是动态验收通过。

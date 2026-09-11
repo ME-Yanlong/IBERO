@@ -9,7 +9,7 @@ from ibero.materials.stock import VoxelStock
 from ibero.materials.stock_collision import add_stock_geoms, StockCollisionBinding
 from ibero.core.loads import PhysicalLoads
 from ibero.core.reproducibility import simulation_source_hash
-from ibero.processes.milling import MillingProcess
+from ibero.processes.milling import MillingProcess, MillingState
 from ibero.materials.parameters import finite_number
 from ibero.processes.tools import quaternion_matrix
 
@@ -286,8 +286,42 @@ class MillingFixture:
             raise ValueError("Finite target and nonnegative spindle command required")
         if type(substeps) is not int or not 1 <= substeps <= 5000:
             raise ValueError("Invalid milling substep count")
-        self._set_motion_command(target)
-        self.data.ctrl[self.model.actuator("mill_motor").id] = rpm * np.pi / 30
+        horizon_hit = False
+        if self.scene is not None:
+            dt = float(self.model.opt.timestep)
+            remaining = self.scene.constraints["task"]["max_seconds"] - self.data.time
+            # 只在靠近截止时刻时做除法，避免巨大合法时长 / 极小步长溢出。
+            # 1e-8 个物理步仅补偿时钟累计舍入，不允许多积分一个完整子步。
+            if remaining <= 0:
+                substeps, horizon_hit = 0, True
+            elif remaining < (substeps + 1) * dt:
+                budget_steps = max(0, int(np.floor(remaining / dt + 1e-8)))
+                horizon_hit = budget_steps <= substeps
+                substeps = min(substeps, budget_steps)
+        load_evaluation_time = float(self.data.time)
+        if substeps:
+            self._set_motion_command(target)
+            self.data.ctrl[self.model.actuator("mill_motor").id] = rpm * np.pi / 30
+        else:
+            # 不足一个物理步时立即锁存超时；不写执行器、载荷、材料或引擎状态。
+            self._done = True
+            self.process.invalid_reason = "episode_time_limit"
+            actual_rpm = float(self.data.joint("mill_spindle").qvel[0]) * 30 / np.pi
+            state = MillingState(
+                mode="timeout",
+                invalid_reason="episode_time_limit",
+                rpm=actual_rpm,
+                force_world_n=(0.0, 0.0, 0.0),
+                torque_world_nm=(0.0, 0.0, 0.0),
+                application_point_world_m=tuple(self.data.site("mill_tip").xpos),
+                spindle_power_w=0.0,
+                removed_volume_m3=0.0,
+                material_version=self.stock.version,
+                axial_depth_m=0.0,
+                evaluated_velocity_world_m_s=(0.0, 0.0, 0.0),
+                evaluated_rpm=actual_rpm,
+                coupling_velocity_residual=0.0,
+            )
         total_removed = 0.0
         peak_force, peak_torque, peak_power, peak_shank_penetration = 0.0, 0.0, 0.0, 0.0
         peak_applied_force = 0.0
@@ -359,7 +393,12 @@ class MillingFixture:
                 self._done = True
                 self.process.invalid_reason = "numerical_instability"
                 break
+        if horizon_hit and not self._done:
+            self._done = True
+            self.process.invalid_reason = "episode_time_limit"
         info = asdict(state)
+        if substeps == 0:
+            info["load_evaluation_performed"] = False
         actual_omega = float(self.data.joint("mill_spindle").qvel[0])
         motor_torque = float(
             self.data.actuator_force[self.model.actuator("mill_motor").id]
