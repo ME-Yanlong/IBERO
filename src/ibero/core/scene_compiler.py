@@ -14,6 +14,7 @@ from ibero.mechanisms.snap_latch import LatchNames
 from ibero.materials.harness import HarnessParameters, add_harness
 from ibero.materials.stock import VoxelStock
 from ibero.materials.stock_collision import StockCollisionBinding, add_stock_geoms
+from ibero.core.milling_builder import CompiledMilling, compile_milling
 
 
 @dataclass(frozen=True)
@@ -71,8 +72,16 @@ class SceneCompiler:
 
     def compile(
         self, scene: ValidatedScene
-    ) -> CompiledScene | CompiledFixture | CompiledLatchCell | CompiledStockFixture:
+    ) -> (
+        CompiledScene
+        | CompiledFixture
+        | CompiledLatchCell
+        | CompiledStockFixture
+        | CompiledMilling
+    ):
         if scene.config.get("schema_version") == "ibero.industrial/v0.1":
+            if scene.config["kind"] in {"milling_bench", "plate_milling"}:
+                return compile_milling(scene)
             if scene.config["kind"] in {"latch_release", "harness_unplug"}:
                 from ibero.robots.g1_industrial import robot_spec, robot_handles
                 from ibero.mechanisms.snap_latch import add_latch

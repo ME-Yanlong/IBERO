@@ -7,20 +7,12 @@ from pathlib import Path
 from types import MappingProxyType
 import mujoco
 import numpy as np
-from ibero.benches.milling import MillingFixture
+from ibero.core.milling_runtime import MillingRuntime
 from ibero.core.scene_loader import SceneLoader
 from ibero.core.task_loading import load_task_spec
 from ibero.core.task_api import TaskState
 from ibero.core.audit import AuditSnapshot
-from ibero.core.loads import PhysicalLoads
 from ibero.control.milling import MillingArmServo
-from ibero.materials.stock import VoxelStock
-from ibero.materials.stock_collision import add_stock_geoms, StockCollisionBinding
-from ibero.materials.parameters import StockParameters, strict_parameters
-from ibero.processes.tools import EndMillGeometry
-from ibero.processes.milling_forces import MillingCoefficients, MillingLimits
-from ibero.processes.milling import MillingProcess
-from ibero.robots.g1_milling import milling_robot_spec, add_plate_support
 from ibero.robots.g1_industrial import solve_reset_pose
 from ibero.robots.g1_upperbody import ARM_JOINTS
 from ibero.robots.g1_upperbody_2f85 import vendored_robot_asset_hash
@@ -28,7 +20,7 @@ from ibero.robots.g1_upperbody_2f85 import vendored_robot_asset_hash
 DEFAULT_SCENE = Path(__file__).resolve().parents[3] / "scenes/plate_milling"
 
 
-class PlateMillingEnv(MillingFixture):
+class PlateMillingEnv(MillingRuntime):
     scene_kind = "plate_milling"
 
     def __init__(self, scene_path=DEFAULT_SCENE, *, shape="through_hole"):
@@ -38,56 +30,11 @@ class PlateMillingEnv(MillingFixture):
             raise ValueError("Expected plate_milling recipe")
         self.task = load_task_spec(self.scene)
         self.target = self.task.make_target(shape)
-        self.tool = strict_parameters(EndMillGeometry, cfg["tool"])
-        self.coefficients = strict_parameters(
-            MillingCoefficients, cfg["process"]["coefficients"]
-        )
-        self.limits = strict_parameters(MillingLimits, cfg["process"]["limits"])
-        self.stock = VoxelStock(
-            strict_parameters(StockParameters, cfg["materials"]["stock"]),
-            cfg["numerics"]["cell_size_m"],
-            origin=cfg["workcell"]["stock_origin_m"],
-            max_cells=cfg["numerics"]["max_cells"],
-        )
-        r = cfg["robot"]
-        self.axis_parameters = dict(
-            r
-        )  # 同一身份入口记录实际机器人伺服/安装参数，不是台架能力。
-        spec = milling_robot_spec(
-            self.tool,
-            self.limits,
-            timestep=cfg["physics"]["timestep_s"],
-            tip_offset_m=r["tip_offset_m"],
-            bracket_mass_kg=r["bracket_mass_kg"],
-        )
-        spec.option.gravity = cfg["physics"]["gravity_m_s2"]
-        add_stock_geoms(spec, self.stock, contype=8)
-        add_plate_support(
-            spec,
-            origin=self.stock.origin,
-            half_size=np.array(self.stock.params.size_m) / 2,
-        )
-        self.model = spec.compile()
-        self.data = mujoco.MjData(self.model)
-        self.binding = StockCollisionBinding(self.model, self.stock)
+        from ibero.core.scene_compiler import SceneCompiler
+
+        self._initialize_runtime(SceneCompiler().compile(self.scene))
         self.stock_geom_ids = frozenset(int(i) for i in self.binding.geom_ids)
-        self.loads = PhysicalLoads(self.model)
-        self.process = MillingProcess(
-            self.model,
-            self.binding,
-            self.tool,
-            self.coefficients,
-            self.limits,
-            tool_body="mill_rotor",
-            tool_tip_site="mill_tip",
-            blade_geom="mill_blade",
-            spindle_joint="mill_spindle",
-            angular_samples=cfg["numerics"]["angular_samples"],
-            edge_transition_chip_m=cfg["numerics"]["edge_transition_chip_m"],
-            axis_tolerance_rad=r["axis_tolerance_rad"],
-            holder_angular_limit_rad_s=r["holder_angular_limit_rad_s"],
-        )
-        self.start = self.stock.local_to_world(cfg["initialization"]["tip_position_m"])
+        r = cfg["robot"]
         self.servo_stride = round(1 / r["servo_hz"] / self.model.opt.timestep)
         self.inspect_target(self.target)  # 编译后的实体范围必须能容纳声明目标。
         self.reset(seed=0)

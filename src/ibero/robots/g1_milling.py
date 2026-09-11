@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 from ibero.robots.g1_industrial import robot_spec, IndustrialRobotHandles
 from ibero.robots.g1_upperbody import ARM_JOINTS
-from ibero.benches.milling import add_spindle
+from ibero.robots.spindle import add_spindle
 
 
 def milling_robot_spec(

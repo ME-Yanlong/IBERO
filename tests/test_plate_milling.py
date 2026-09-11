@@ -149,7 +149,8 @@ def test_invalid_servo_gains_fail_before_commands(env):
 
 
 def test_working_blade_cannot_hide_a_collision_with_a_fixture(monkeypatch):
-    import ibero.envs.plate_milling as module
+    # 夹具装配移到 P2 builder 后，在真实装配入口注入同一碰撞反例。
+    import ibero.robots.g1_milling as module
 
     original = module.add_plate_support
 
@@ -163,7 +164,7 @@ def test_working_blade_cannot_hide_a_collision_with_a_fixture(monkeypatch):
         )
 
     monkeypatch.setattr(module, "add_plate_support", with_obstacle)
-    e = module.PlateMillingEnv()
+    e = PlateMillingEnv()
     assert any(e.process.blade_geom in (c.geom1, c.geom2) for c in e.data.contact)
     assert e._after_physics_step() == "robot_or_fixture_contact_limit"
 
