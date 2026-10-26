@@ -5,9 +5,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
+import mujoco
 
 from ibero.core.routing_config import validate_routing
 from ibero.core.scene_loader import SceneLoader
+from ibero.control.routing_patterns import RoutingPatternScript
 from ibero.envs.cable_routing import CableRoutingEnv
 
 
@@ -33,7 +35,15 @@ def test_pattern_scenes_use_real_horizontal_and_vertical_clip_mounts(name, tange
         assert tuple(env.task.goal.clip_ids) == tuple(
             clip["id"] for clip in scene.config["workcell"]["clips"]
         )
-        env.reset(seed=0)
+        observation, _ = env.reset(seed=0)
+        slide = env.feed_slide
+        assert slide is not None
+        assert env.model.joint("feed_slide_joint_2").type == mujoco.mjtJoint.mjJNT_SLIDE
+        assert env.model.geom_contype[slide.geom_id] != 0
+        assert slide.actuator_id not in env.handles.hold_actuator_ids
+        assert abs(env.last_info["feed_support_slide_m"]) < 0.001
+        assert "feed_support_slide_m" in observation
+        assert env.observation_space.contains(observation)
         if name == "cable_route_l":
             tip_id = env.handles.guide_tip_site_id
             assert tip_id is not None
@@ -79,10 +89,50 @@ def test_pattern_scenes_use_real_horizontal_and_vertical_clip_mounts(name, tange
         env.close()
 
 
+@pytest.mark.parametrize("name", ["cable_route_l", "cable_route_rectangle"])
+def test_feed_slide_retracts_only_after_two_clips_retain_real_cable(name):
+    """回归供线架真正受限退让，不允许初始悬空或控制器伪造入夹。"""
+    env = CableRoutingEnv(scene_path=ROOT / name)
+    try:
+        env.reset(seed=0)
+        policy = RoutingPatternScript()
+        first_two_seen = False
+        retracted = False
+        for _ in range(100):
+            _, _, terminated, truncated, info = env.step(policy.action(env))
+            metrics = info["metrics"]
+            first_two_seen |= bool(
+                metrics["clip_01_retained"] and metrics["clip_02_retained"]
+            )
+            if not first_two_seen:
+                assert info["feed_support_slide_m"] > -0.001
+            assert abs(info["feed_support_slide_force_n"]) <= 5.001
+            assert info["feed_support_robot_contact_peak_n"] < 1.0
+            if info["feed_support_retracted"]:
+                assert first_two_seen
+                assert metrics["clip_01_retained"] and metrics["clip_02_retained"]
+                assert metrics["bend_ok"]
+                retracted = True
+                break
+            assert not terminated and not truncated
+        assert first_two_seen and retracted
+    finally:
+        env.close()
+
+
 def test_parallel_clip_bases_cannot_overlap_before_compilation():
     scene = ROOT / "cable_route_straight"
     config = yaml.safe_load((scene / "scene_config.yaml").read_text(encoding="utf-8"))
     constraints = yaml.safe_load((scene / "constraints.yaml").read_text(encoding="utf-8"))
     config["workcell"]["clips"][1]["origin_m"][1] = 0.025
     with pytest.raises(ValueError, match="Clip bases overlap"):
+        validate_routing(config, constraints)
+
+
+def test_feed_slide_rejects_unbounded_force_before_compilation():
+    scene = ROOT / "cable_route_l"
+    config = yaml.safe_load((scene / "scene_config.yaml").read_text(encoding="utf-8"))
+    constraints = yaml.safe_load((scene / "constraints.yaml").read_text(encoding="utf-8"))
+    config["workcell"]["feed_slide"]["force_limit_n"] = 25.0
+    with pytest.raises(ValueError, match="speed/force"):
         validate_routing(config, constraints)

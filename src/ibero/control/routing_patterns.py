@@ -18,6 +18,7 @@ class RoutingPatternScript:
     def reset(self):
         self.phase = "approach"
         self.phase_ticks = 0
+        self.retract_hold_pins = None
 
     def _next(self, phase):
         self.phase, self.phase_ticks = phase, 0
@@ -111,10 +112,21 @@ class RoutingPatternScript:
             ])
             grips = (1.0, 1.0)
             if first_two:
+                # 滑台退让时冻结双手在已实测入夹的姿态，避免因线端悬空改变弯曲与张力。
+                self.retract_hold_pins = pins.copy()
                 self._next(
                     "free_left" if rectangle else
+                    "retract_support" if guide_tool and getattr(env, "feed_slide", None) is not None else
                     "guide_under" if guide_tool else "support_retract"
                 )
+        elif self.phase == "retract_support":
+            # 供线架必须由真实滑台退到工作空间外；只读关节实测值，不按时间猜完成。
+            targets = self.retract_hold_pins if self.retract_hold_pins is not None else pins.copy()
+            grips = (1.0, 1.0)
+            slide_q = env.last_info.get("feed_support_slide_m")
+            if (env.last_info.get("feed_support_retracted", False)
+                    or (slide_q is not None and float(slide_q) <= -0.050)):
+                self._next("guide_under")
         elif self.phase == "guide_under":
             # 从真实转角线段下方绕到板侧，鼻头到位后再抬升；避免从线外侧
             # 直接推向背座，造成越压越深的错误受力方向。

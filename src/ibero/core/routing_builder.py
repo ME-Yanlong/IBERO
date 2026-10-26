@@ -37,12 +37,25 @@ class RoutingRobotHandles:
 
 
 @dataclass(frozen=True)
+class RoutingFeedSlide:
+    """右侧供线支架的真实滑动关节与执行器索引。"""
+
+    qpos_adr: int
+    actuator_id: int
+    geom_id: int
+    travel_m: float
+    clearance_m: float
+    speed_m_s: float
+
+
+@dataclass(frozen=True)
 class CompiledRouting:
     model: mujoco.MjModel
     robot: RoutingRobotHandles
     cable: RoutingCableParameters
     clip_names: tuple
     clip_parameters: CableClipParameters
+    feed_slide: RoutingFeedSlide | None
 
 
 def _clip_quaternion(tangent="horizontal"):
@@ -145,15 +158,39 @@ def compile_routing(config):
     # 机器人须先在空档夹住材料，再把线移离供料架。
     support_y = config["workcell"].get("feed_support_y_m", [0.145, 0.0, -0.145])
     support_half_y = config["workcell"].get("feed_support_half_y_m", [0.012, 0.012, 0.012])
+    slide = config["workcell"].get("feed_slide")
     for index, (y, half_y) in enumerate(zip(support_y, support_half_y)):
-        spec.worldbody.add_geom(
-            name=f"feed_support_{index}",
-            type=mujoco.mjtGeom.mjGEOM_BOX,
-            pos=[0.405, y, 0.850],
-            size=[0.022, half_y, 0.009],
-            rgba=[0.26, 0.38, 0.50, 1],
-            friction=[0.65, 0.005, 0.0001],
-        )
+        if index == 2 and slide is not None:
+            # 同一个承托盒装到真实滑轨上；机器人抓稳并完成前两夹后才退让。
+            carriage = spec.worldbody.add_body(
+                name="feed_slide_carriage_2", pos=[0.405, y, 0.850]
+            )
+            carriage.add_joint(
+                name="feed_slide_joint_2", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                axis=[0, 1, 0], range=[-slide["travel_m"], 0],
+                damping=0.15, armature=0.0002,
+            )
+            carriage.add_geom(
+                name="feed_support_2", type=mujoco.mjtGeom.mjGEOM_BOX,
+                pos=[0, 0, 0], size=[0.022, half_y, 0.009],
+                mass=slide["mass_kg"], rgba=[0.16, 0.65, 0.57, 1],
+                friction=[0.65, 0.005, 0.0001],
+            )
+            drive = spec.add_actuator(
+                name="feed_slide_position_2", target="feed_slide_joint_2",
+                trntype=mujoco.mjtTrn.mjTRN_JOINT,
+            )
+            drive.set_to_position(kp=slide["kp_n_m"], kv=slide["kv_ns_m"])
+            drive.forcelimited = drive.ctrllimited = True
+            drive.forcerange = [-slide["force_limit_n"], slide["force_limit_n"]]
+            drive.ctrlrange = [-slide["travel_m"], 0]
+        else:
+            spec.worldbody.add_geom(
+                name=f"feed_support_{index}", type=mujoco.mjtGeom.mjGEOM_BOX,
+                pos=[0.405, y, 0.850], size=[0.022, half_y, 0.009],
+                rgba=[0.26, 0.38, 0.50, 1],
+                friction=[0.65, 0.005, 0.0001],
+            )
     spec.worldbody.add_geom(
         name="routing_floor",
         type=mujoco.mjtGeom.mjGEOM_PLANE,
@@ -205,8 +242,11 @@ def compile_routing(config):
         [model.actuator(f"{side}_fingers_actuator").id for side in ("left", "right")],
         dtype=np.int32,
     )
+    feed_actuator = model.actuator("feed_slide_position_2").id if slide else None
     held = np.array(
-        [i for i in range(model.nu) if i not in set(arms) | set(grips)], dtype=np.int32
+        [i for i in range(model.nu)
+         if i not in set(arms) | set(grips) | ({feed_actuator} if slide else set())],
+        dtype=np.int32,
     )
     handles = RoutingRobotHandles(
         arms,
@@ -225,4 +265,15 @@ def compile_routing(config):
         tuple(model.geom(f"right_cable_guide_{name}").id for name in ("lead_bridge", "lead_nose"))
         if config["workcell"].get("guide_tool") else (),
     )
-    return CompiledRouting(model, handles, cable, tuple(names), clip_params)
+    feed_handle = None
+    if slide is not None:
+        joint_id = model.joint("feed_slide_joint_2").id
+        feed_handle = RoutingFeedSlide(
+            qpos_adr=int(model.jnt_qposadr[joint_id]),
+            actuator_id=int(feed_actuator),
+            geom_id=model.geom("feed_support_2").id,
+            travel_m=float(slide["travel_m"]),
+            clearance_m=float(slide["clearance_m"]),
+            speed_m_s=float(slide["speed_m_s"]),
+        )
+    return CompiledRouting(model, handles, cable, tuple(names), clip_params, feed_handle)

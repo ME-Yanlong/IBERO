@@ -74,7 +74,7 @@ def validate_routing(config, constraints):
         raise ValueError("Clip mouth/seat must straddle cable radius")
     workcell = _mapping(config["workcell"], "workcell")
     if not {"board", "clips"}.issubset(workcell) or set(workcell) - {
-        "board", "clips", "guide_tool", "feed_support_y_m", "feed_support_half_y_m"
+        "board", "clips", "guide_tool", "feed_support_y_m", "feed_support_half_y_m", "feed_slide"
     }:
         raise ValueError("Routing workcell requires board/clips and known optional fields")
     if "guide_tool" in workcell and workcell["guide_tool"] != "right_offset_nose_v1":
@@ -87,6 +87,20 @@ def validate_routing(config, constraints):
         widths = _vector(workcell["feed_support_half_y_m"], "workcell.feed_support_half_y_m")
         if any(not 0.005 <= value <= 0.05 for value in widths):
             raise ValueError("Feed support half widths must be within [5, 50] mm")
+    if "feed_slide" in workcell:
+        slide = _mapping(workcell["feed_slide"], "workcell.feed_slide")
+        expected = {"kind", "trigger", "travel_m", "clearance_m", "speed_m_s",
+                    "kp_n_m", "kv_ns_m", "force_limit_n", "mass_kg"}
+        if set(slide) != expected or slide["kind"] != "retracting_rail_v1" or slide["trigger"] != "first_two_retained":
+            raise ValueError("Unsupported feed slide configuration")
+        if len(workcell["clips"]) < 2:
+            raise ValueError("Feed slide requires at least two clips")
+        for key in expected - {"kind", "trigger"}:
+            _number(slide[key], f"workcell.feed_slide.{key}", positive=True)
+        if not 0 < slide["clearance_m"] < slide["travel_m"] <= 0.10:
+            raise ValueError("Feed slide clearance/travel must be ordered within 100 mm")
+        if slide["speed_m_s"] > 0.20 or slide["force_limit_n"] > 20:
+            raise ValueError("Feed slide speed/force exceeds fixture bounds")
     board = _mapping(workcell["board"], "board")
     _vector(board["center_m"], "board.center_m")
     if any(value <= 0 for value in _vector(board["half_size_m"], "board.half_size_m")):

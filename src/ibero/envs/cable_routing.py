@@ -39,6 +39,7 @@ class CableRoutingEnv(gym.Env):
         self.compiled = compile_routing(self.scene.config)
         self.model = self.compiled.model
         self.handles = self.compiled.robot
+        self.feed_slide = self.compiled.feed_slide
         self.data = mujoco.MjData(self.model)
         self.task = load_task_spec(self.scene)
         self.mechanics = CableMechanics(self.model, self.compiled.cable)
@@ -70,6 +71,10 @@ class CableRoutingEnv(gym.Env):
             "tension_n": spaces.Box(0, 1e5, shape=(1,), dtype=np.float32),
             "grasp": spaces.MultiBinary(2),
         })
+        if self.feed_slide is not None:
+            self.observation_space.spaces["feed_support_slide_m"] = spaces.Box(
+                -self.feed_slide.travel_m, 0, shape=(1,), dtype=np.float32
+            )
         self._renderer = None
         self._render_camera = mujoco.MjvCamera()
         self._render_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -184,6 +189,22 @@ class CableRoutingEnv(gym.Env):
             "clip_collision_geoms": sorted(clip_collision_geoms),
         }
 
+    def _feed_slide_contact(self):
+        """读取滑台支架与右侧机器人实体接触，供避障诊断使用。"""
+        if self.feed_slide is None:
+            return 0.0
+        support = self.feed_slide.geom_id
+        right = self.handles.right_robot_geom_ids
+        wrench = np.zeros(6)
+        peak = 0.0
+        for index, contact in enumerate(self.data.contact[:self.data.ncon]):
+            pair = (int(contact.geom1), int(contact.geom2))
+            if support not in pair or not any(geom in right for geom in pair):
+                continue
+            mujoco.mj_contactForce(self.model, self.data, index, wrench)
+            peak = max(peak, max(0.0, float(wrench[0])))
+        return peak
+
     def _update_grasps(self):
         candidates = {}
         points = self._points()
@@ -278,15 +299,20 @@ class CableRoutingEnv(gym.Env):
 
     def _observation(self):
         points = self._points()
-        return {
+        observation = {
             "pinch_m": np.asarray(self.data.site_xpos[[self.handles.left_anchor_site_id, self.handles.right_anchor_site_id]], dtype=np.float32).copy(),
             "cable_m": points.astype(np.float32),
             "tension_n": np.asarray([self.mechanics.tension(self.data)], dtype=np.float32),
             "grasp": np.asarray([self._grasped("left"), self._grasped("right")], dtype=np.int8),
         }
+        if self.feed_slide is not None:
+            observation["feed_support_slide_m"] = np.asarray(
+                [self.data.qpos[self.feed_slide.qpos_adr]], dtype=np.float32
+            )
+        return observation
 
     def _info(self, result):
-        return {
+        info = {
             "stage": result.stage,
             "is_success": bool(result.success),
             "failure_reason": result.failure_reason,
@@ -300,6 +326,18 @@ class CableRoutingEnv(gym.Env):
             "initial_cable_jitter_m": self._initial_cable_jitter.tolist(),
             "guide_contact": dict(self._guide_contact_interval),
         }
+        if self.feed_slide is not None:
+            slide = self.feed_slide
+            measured = float(self.data.qpos[slide.qpos_adr])
+            info.update({
+                "feed_support_slide_m": measured,
+                "feed_support_slide_command_m": self._feed_slide_command_m,
+                "feed_support_slide_force_n": float(self.data.actuator_force[slide.actuator_id]),
+                "feed_support_retracted": measured <= -slide.clearance_m,
+                "feed_support_slide_triggered": self._feed_slide_triggered,
+                "feed_support_robot_contact_peak_n": self._feed_slide_contact_peak_n,
+            })
+        return info
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -320,6 +358,11 @@ class CableRoutingEnv(gym.Env):
                 self.data.qpos[self.model.jnt_qposadr[joint + axis]] += self._initial_cable_jitter[axis]
         self.controller.reset(self.data)
         self.data.ctrl[self.handles.gripper_actuator_ids] = 0.0
+        self._feed_slide_command_m = 0.0
+        self._feed_slide_triggered = False
+        self._feed_slide_contact_peak_n = 0.0
+        if self.feed_slide is not None:
+            self.data.ctrl[self.feed_slide.actuator_id] = 0.0
         mujoco.mj_forward(self.model, self.data)
         for values in self._grasp_history.values():
             values.clear()
@@ -354,6 +397,19 @@ class CableRoutingEnv(gym.Env):
         if self._done:
             raise RuntimeError("Episode ended; reset before stepping")
         self.controller.apply(self.data, action)
+        if self.feed_slide is not None:
+            # 前两夹真实留线、双手仍接触夹持后，供料滑台以受限电机沿轨道退让。
+            # 这里只控制工位执行器，不改写 Flex、夹口观测或任务成功状态。
+            metrics = self._last_info.get("metrics", {})
+            if (metrics.get("clip_01_retained") and metrics.get("clip_02_retained")
+                    and self._grasped("left") and self._grasped("right")):
+                self._feed_slide_triggered = True
+            if self._feed_slide_triggered:
+                self._feed_slide_command_m = max(
+                    -self.feed_slide.travel_m,
+                    self._feed_slide_command_m - self.feed_slide.speed_m_s * self.control_dt,
+                )
+            self.data.ctrl[self.feed_slide.actuator_id] = self._feed_slide_command_m
         guide_elements = set()
         guide_tip_elements = set()
         guide_rear_lip_elements = set()
@@ -370,10 +426,15 @@ class CableRoutingEnv(gym.Env):
         guide_tip_contact_substeps = 0
         guide_rear_lip_contact_substeps = 0
         guide_lead_contact_substeps = 0
+        self._feed_slide_contact_peak_n = 0.0
         for _ in range(self.physics_substeps):
             self.mechanics.apply(self.data)
             mujoco.mj_step(self.model, self.data)
             self._check_numerics()
+            if self.feed_slide is not None:
+                self._feed_slide_contact_peak_n = max(
+                    self._feed_slide_contact_peak_n, self._feed_slide_contact()
+                )
             if self.handles.guide_nose_geom_id is not None:
                 guide = self._guide_contact()
                 if guide["touching_cable"]:
