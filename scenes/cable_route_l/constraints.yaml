@@ -1,0 +1,7 @@
+cable:
+  tension_limit_n: 8.0
+  limit_duration_s: 0.04
+clip:
+  penetration_limit_m: 0.001
+collision:
+  allowed_robot_pairs: []

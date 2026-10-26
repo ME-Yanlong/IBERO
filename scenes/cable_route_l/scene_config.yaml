@@ -1,0 +1,72 @@
+schema_version: ibero.routing/v0.2
+id: cable_route_l
+kind: cable_route_l
+suite: harness
+backend: mujoco
+robot:
+  preset: g1_upperbody_v0
+  end_effector: robotiq_2f85
+physics:
+  timestep_s: 0.0002
+  control_hz: 20
+  max_episode_steps: 750
+materials:
+  cable:
+    length_m: 0.302
+    outer_diameter_m: 0.010
+    linear_density_kg_m: 0.055
+    minimum_bend_radius_m: 0.020
+    axial_stiffness_n_m: 180.0
+    bending_stiffness_nm2: 0.0002
+    damping: 0.05
+    friction: 0.85
+    segments: 16
+    parameter_source: provisional
+mechanism:
+  wire_radius_m: 0.005
+  seat_half_width_m: 0.0056
+  mouth_half_width_m: 0.0038
+  seat_depth_m: 0.008
+  jaw_length_m: 0.025
+  jaw_width_m: 0.020
+  jaw_thickness_m: 0.0015
+  young_pa: 200000000.0
+  density_kg_m3: 1200.0
+  relaxation_time_s: 0.003
+  lip_depth_m: 0.002
+  friction: 0.4
+  parameter_source: provisional
+workcell:
+  board:
+    center_m: [0.515, 0.0, 0.85]
+    half_size_m: [0.008, 0.30, 0.20]
+  clips:
+    - id: clip_01
+      origin_m: [0.470, 0.040, 0.862]
+      tangent: horizontal
+    - id: clip_02
+      origin_m: [0.470, 0.000, 0.862]
+      tangent: horizontal
+    - id: clip_03
+      origin_m: [0.470, -0.040, 0.882]
+      tangent: vertical
+    - id: clip_04
+      origin_m: [0.470, -0.040, 0.922]
+      tangent: vertical
+initialization:
+  cable_start_m: [0.420574, 0.148619, 0.888221]
+  cable_end_m: [0.420574, -0.148609, 0.888221]
+routing_goal:
+  ordered_clips: [clip_01, clip_02, clip_03, clip_04]
+  route_points_m:
+    - [0.462, 0.040, 0.862]
+    - [0.462, 0.000, 0.862]
+    - [0.462, -0.020, 0.862]
+    - [0.462, -0.034, 0.868]
+    - [0.462, -0.040, 0.882]
+    - [0.462, -0.040, 0.922]
+  corridor_m: 0.015
+  hold_time_s: 0.20
+  speed_limit_m_s: 0.04
+render:
+  cameras: [front, side]

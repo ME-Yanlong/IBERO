@@ -27,6 +27,10 @@ TITLES = {
     "through_hole": "机器人铣削：通孔",
     "slot": "机器人铣削：直槽",
     "pocket": "机器人铣削：浅腔",
+    "cable_clip_insert": "双臂裸线压入弹性线夹",
+    "cable_route_straight": "双臂立式板直线布线",
+    "cable_route_l": "双臂立式板 L 形布线",
+    "cable_route_rectangle": "双臂立式板开口矩形布线",
 }
 
 
@@ -60,7 +64,7 @@ def case_passed(last_info, source_report=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env", required=True, choices=("cable_handover", "cable_stretch", "latch_release", "harness_unplug", "plate_milling"))
+    parser.add_argument("--env", required=True, choices=("cable_handover", "cable_stretch", "latch_release", "harness_unplug", "plate_milling", "cable_clip_insert", "cable_route_straight", "cable_route_l", "cable_route_rectangle"))
     parser.add_argument("--shape", choices=("through_hole", "slot", "pocket"), default="through_hole")
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--report", type=Path)
@@ -84,6 +88,13 @@ def main():
         env = PlateMillingEnv(scene, shape=args.shape)
         trace = StockTrace(env).load(args.trace)
         views = MillingViews(env, visual_chips=True, render_quality="fast")
+    elif args.env in ("cable_clip_insert", "cable_route_straight", "cable_route_l", "cable_route_rectangle"):
+        from ibero.envs.cable_routing import CableRoutingEnv
+        from ibero.routing_review import RoutingViews
+
+        env = CableRoutingEnv(scene_path=scene)
+        trace = Trace(env).load(args.trace)
+        views = RoutingViews(env.model, env.scene.config["workcell"]["clips"][0]["origin_m"])
     elif args.env in ("latch_release", "harness_unplug"):
         from ibero.envs.latch_release import LatchReleaseEnv
         from ibero.envs.harness_unplug import HarnessUnplugEnv
@@ -128,7 +139,7 @@ def main():
             if args.env == "plate_milling":
                 views.set_frame(trace, index)
                 base = views.render(trace.infos[:index + 1])
-            elif args.env in ("latch_release", "harness_unplug"):
+            elif args.env in ("latch_release", "harness_unplug", "cable_clip_insert", "cable_route_straight", "cable_route_l", "cable_route_rectangle"):
                 views.set_state(trace.states[index])
                 base = views.render(trace.infos[:index + 1])
             else:

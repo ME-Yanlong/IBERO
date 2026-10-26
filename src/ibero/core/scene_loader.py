@@ -91,7 +91,11 @@ class SceneLoader:
         config = _read_mapping(config_path)
         constraints = _read_mapping(constraints_path)
         try:
-            if config.get("schema_version") == "ibero.industrial/v0.1":
+            if config.get("schema_version") == "ibero.routing/v0.2":
+                from ibero.core.routing_config import validate_routing
+
+                validate_routing(config, constraints)
+            elif config.get("schema_version") == "ibero.industrial/v0.1":
                 # 新台架走独立严格校验，不放松已经验收的线束菜谱规则。
                 from ibero.core.industrial_config import validate_industrial
 

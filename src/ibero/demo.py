@@ -124,6 +124,10 @@ def main() -> None:
             "latch_release",
             "harness_unplug",
             "plate_milling",
+            "cable_clip_insert",
+            "cable_route_straight",
+            "cable_route_l",
+            "cable_route_rectangle",
         ),
         default="cable_stretch",
         help="which scripted scene to run",
@@ -212,6 +216,11 @@ def main() -> None:
             from ibero.milling_demo import run_demo
         else:
             from ibero.industrial_demo import run_demo
+
+        run_demo(args)
+        return
+    if args.env in {"cable_clip_insert", "cable_route_straight", "cable_route_l", "cable_route_rectangle"}:
+        from ibero.routing_demo import run_demo
 
         run_demo(args)
         return

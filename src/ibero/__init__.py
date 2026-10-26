@@ -28,6 +28,25 @@ def make(env_id: str, **kwargs) -> CableTensionEnv | CableHandoverEnv:
 
         kwargs.setdefault("scene_path", DEFAULT_SCENE_PATH.parent / "cable_stretch")
         return CableHandoverEnv(**kwargs)
+    if env_id in {
+        "ibero/CableClipInsert-v0": "cable_clip_insert",
+        "ibero/CableRouteStraight-v0": "cable_route_straight",
+        "ibero/CableRouteL-v0": "cable_route_l",
+        "ibero/CableRouteRectangle-v0": "cable_route_rectangle",
+    }:
+        from pathlib import Path
+        from ibero.envs.cable_routing import CableRoutingEnv
+
+        scene_name = {
+            "ibero/CableClipInsert-v0": "cable_clip_insert",
+            "ibero/CableRouteStraight-v0": "cable_route_straight",
+            "ibero/CableRouteL-v0": "cable_route_l",
+            "ibero/CableRouteRectangle-v0": "cable_route_rectangle",
+        }[env_id]
+        kwargs.setdefault(
+            "scene_path", Path(__file__).resolve().parents[2] / "scenes" / scene_name
+        )
+        return CableRoutingEnv(**kwargs)
     raise ValueError(f"Unsupported IBERO environment: {env_id!r}")
 
 
