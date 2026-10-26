@@ -59,7 +59,6 @@ def main():
         / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     )
     out.mkdir(parents=True, exist_ok=False)
-    simulation_source_hash.cache_clear()
     report = {
         "scope": "precut_diagnostic_only",
         "manifest": manifest,

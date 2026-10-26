@@ -80,7 +80,6 @@ def main():
     finally:
         for env in envs.values():
             env.close()
-    simulation_source_hash.cache_clear()
     frozen = source == simulation_source_hash() == group.get("source_hash")
     report = dict(
         scope="all_saved_latch_group_replays_not_policy_checkpoint",

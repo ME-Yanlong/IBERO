@@ -157,7 +157,6 @@ def run_suite(args):
         report["exception"] = f"{type(error).__name__}: {error}"
         report["passed"] = False
         exit_code = 1
-    simulation_source_hash.cache_clear()
     report["frozen_source"] = source == simulation_source_hash()
     if not report["frozen_source"]:
         report["passed"], exit_code = False, 1

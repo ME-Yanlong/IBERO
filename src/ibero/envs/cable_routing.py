@@ -59,6 +59,10 @@ class CableRoutingEnv(gym.Env):
             )
             for name in self.compiled.clip_names
         )
+        self._clip_geom_ids = frozenset(
+            geom for observer in self.clip_observers
+            for geom in observer.contact_geom_ids
+        )
         self.action_space = spaces.Box(-1, 1, shape=(14,), dtype=np.float32)
         self.observation_space = spaces.Dict({
             "pinch_m": spaces.Box(-10, 10, shape=(2, 3), dtype=np.float32),
@@ -106,26 +110,114 @@ class CableRoutingEnv(gym.Env):
         both_pads = bool(touched.intersection(pads[:2]) and touched.intersection(pads[2:]))
         return both_pads, elems
 
+    def _guide_contact(self):
+        """供参考控制器使用的真实压头—Flex 接触，不写入任务成功条件。"""
+        nose = self.handles.guide_nose_geom_id
+        rear_lip = self.handles.guide_rear_lip_geom_id
+        lead_geoms = self.handles.guide_lead_geom_ids
+        elements = set()
+        tip_elements = set()
+        rear_lip_elements = set()
+        lead_elements = set()
+        normal_force = 0.0
+        tip_normal_force = 0.0
+        rear_lip_normal_force = 0.0
+        lead_normal_force = 0.0
+        clip_collision_force = 0.0
+        clip_collision_penetration = 0.0
+        clip_collision_geoms = set()
+        penetration = 0.0
+        if nose is not None:
+            wrench = np.zeros(6)
+            tip = self.data.site_xpos[self.handles.guide_tip_site_id]
+            for index, contact in enumerate(self.data.contact[:self.data.ncon]):
+                geom_pair = (int(contact.geom1), int(contact.geom2))
+                lead_hit = any(geom in geom_pair for geom in lead_geoms)
+                if nose not in geom_pair and rear_lip not in geom_pair and not lead_hit:
+                    continue
+                if self.mechanics.flex_id not in contact.flex:
+                    clip_geom = next(
+                        (geom for geom in geom_pair if geom in self._clip_geom_ids),
+                        None,
+                    )
+                    if clip_geom is not None:
+                        mujoco.mj_contactForce(self.model, self.data, index, wrench)
+                        clip_collision_force += max(0.0, float(wrench[0]))
+                        clip_collision_penetration = max(
+                            clip_collision_penetration, -float(contact.dist)
+                        )
+                        clip_collision_geoms.add(self.model.geom(clip_geom).name)
+                    continue
+                elements.update(int(elem) for elem in contact.elem if elem >= 0)
+                mujoco.mj_contactForce(self.model, self.data, index, wrench)
+                force = max(0.0, float(wrench[0]))
+                normal_force += force
+                penetration = max(penetration, -float(contact.dist))
+                # 杆身先碰线不等于末端已托住线；短横唇接触单独计量。
+                if rear_lip in geom_pair or (
+                    nose in geom_pair and np.linalg.norm(contact.pos - tip) <= 0.008
+                ):
+                    tip_elements.update(int(elem) for elem in contact.elem if elem >= 0)
+                    tip_normal_force += force
+                if rear_lip in geom_pair:
+                    rear_lip_elements.update(int(elem) for elem in contact.elem if elem >= 0)
+                    rear_lip_normal_force += force
+                if lead_hit:
+                    lead_elements.update(int(elem) for elem in contact.elem if elem >= 0)
+                    lead_normal_force += force
+        return {
+            "touching_cable": bool(elements),
+            "elements": sorted(elements),
+            "normal_force_n": normal_force,
+            "penetration_m": max(0.0, penetration),
+            "tip_touching_cable": bool(tip_elements),
+            "tip_elements": sorted(tip_elements),
+            "tip_normal_force_n": tip_normal_force,
+            "rear_lip_touching_cable": bool(rear_lip_elements),
+            "rear_lip_elements": sorted(rear_lip_elements),
+            "rear_lip_normal_force_n": rear_lip_normal_force,
+            "lead_touching_cable": bool(lead_elements),
+            "lead_elements": sorted(lead_elements),
+            "lead_normal_force_n": lead_normal_force,
+            "clip_collision_force_n": clip_collision_force,
+            "clip_collision_penetration_m": max(0.0, clip_collision_penetration),
+            "clip_collision_geoms": sorted(clip_collision_geoms),
+        }
+
     def _update_grasps(self):
+        candidates = {}
+        points = self._points()
+        n = self.compiled.cable.segments
         for side in ("left", "right"):
             both, elements = self._flex_pad_contacts(side)
-            # 起点和终点附近的材料段分配给不同双手，避免两手碰到同一小段
-            # 就误报两处真实抓持。局部弧长跟踪也用于滑移检测。
-            n = self.compiled.cable.segments
-            if side == "left":
-                assigned = {i for i in elements if i < max(3, n // 3)}
-            else:
-                assigned = {i for i in elements if i >= n - max(3, n // 3)}
+            # 长路径布线需要在任意裸线段重新抓持，不能只认供料架两端。
+            # 只接受两侧指垫共同接触的真实 Flex 元素，并追踪局部滑移。
+            assigned = {i for i in elements if 0 <= i < n}
             pinch = self.handles.left_anchor_site_id if side == "left" else self.handles.right_anchor_site_id
-            pts = self._points()
             if assigned:
-                index = min(assigned, key=lambda i: np.linalg.norm(pts[min(i, n)] - self.data.site_xpos[pinch]))
-                point = (pts[index] + pts[index + 1]) / 2
+                index = min(
+                    assigned,
+                    key=lambda i: np.linalg.norm(
+                        (points[i] + points[i + 1]) / 2 - self.data.site_xpos[pinch]
+                    ),
+                )
+                point = (points[index] + points[index + 1]) / 2
                 rotation = self.data.site_xmat[pinch].reshape(3, 3)
                 relative = rotation.T @ (point - self.data.site_xpos[pinch])
             else:
+                index = None
                 relative = np.array([np.inf, np.inf, np.inf])
-            self._grasp_history[side].append((both and bool(assigned), relative))
+            candidates[side] = (both and index is not None, index, relative)
+        left, right = candidates["left"], candidates["right"]
+        same_section = bool(
+            left[0] and right[0] and abs(left[1] - right[1]) < 2
+        )
+        self._grasp_elements = {}
+        for side, (valid, index, relative) in candidates.items():
+            # 两只手夹同一小段不能冒充两处可独立施力的抓点。
+            valid = valid and not same_section
+            self._grasp_history[side].append((valid, relative))
+            self._grasp_elements[side] = index if valid else None
 
     def _grasped(self, side):
         samples = self._grasp_history[side]
@@ -206,6 +298,7 @@ class CableRoutingEnv(gym.Env):
             "time_s": float(self.data.time),
             "success": bool(result.success),
             "initial_cable_jitter_m": self._initial_cable_jitter.tolist(),
+            "guide_contact": dict(self._guide_contact_interval),
         }
 
     def reset(self, *, seed=None, options=None):
@@ -245,6 +338,12 @@ class CableRoutingEnv(gym.Env):
         mujoco.mj_forward(self.model, self.data)
         self._previous_points = self._points()
         self._update_grasps()
+        self._guide_contact_interval = {
+            **self._guide_contact(), "contact_substeps": 0,
+            "tip_contact_substeps": 0,
+            "rear_lip_contact_substeps": 0,
+            "lead_contact_substeps": 0,
+        }
         result = self.task.evaluate(self._task_state(), self.auditor.snapshot())
         self._last_info = self._info(result)
         return self._observation(), self._last_info
@@ -255,15 +354,90 @@ class CableRoutingEnv(gym.Env):
         if self._done:
             raise RuntimeError("Episode ended; reset before stepping")
         self.controller.apply(self.data, action)
+        guide_elements = set()
+        guide_tip_elements = set()
+        guide_rear_lip_elements = set()
+        guide_lead_elements = set()
+        guide_peak_force = 0.0
+        guide_peak_tip_force = 0.0
+        guide_peak_rear_lip_force = 0.0
+        guide_peak_lead_force = 0.0
+        guide_peak_clip_collision_force = 0.0
+        guide_peak_clip_collision_penetration = 0.0
+        guide_clip_collision_geoms = set()
+        guide_peak_penetration = 0.0
+        guide_contact_substeps = 0
+        guide_tip_contact_substeps = 0
+        guide_rear_lip_contact_substeps = 0
+        guide_lead_contact_substeps = 0
         for _ in range(self.physics_substeps):
             self.mechanics.apply(self.data)
             mujoco.mj_step(self.model, self.data)
             self._check_numerics()
+            if self.handles.guide_nose_geom_id is not None:
+                guide = self._guide_contact()
+                if guide["touching_cable"]:
+                    guide_contact_substeps += 1
+                    guide_elements.update(guide["elements"])
+                    guide_peak_force = max(guide_peak_force, guide["normal_force_n"])
+                    guide_peak_penetration = max(
+                        guide_peak_penetration, guide["penetration_m"]
+                    )
+                if guide["tip_touching_cable"]:
+                    guide_tip_contact_substeps += 1
+                    guide_tip_elements.update(guide["tip_elements"])
+                    guide_peak_tip_force = max(
+                        guide_peak_tip_force, guide["tip_normal_force_n"]
+                    )
+                if guide["rear_lip_touching_cable"]:
+                    guide_rear_lip_contact_substeps += 1
+                    guide_rear_lip_elements.update(guide["rear_lip_elements"])
+                    guide_peak_rear_lip_force = max(
+                        guide_peak_rear_lip_force, guide["rear_lip_normal_force_n"]
+                    )
+                if guide["lead_touching_cable"]:
+                    guide_lead_contact_substeps += 1
+                    guide_lead_elements.update(guide["lead_elements"])
+                    guide_peak_lead_force = max(
+                        guide_peak_lead_force, guide["lead_normal_force_n"]
+                    )
+                if guide["clip_collision_geoms"]:
+                    guide_clip_collision_geoms.update(guide["clip_collision_geoms"])
+                    guide_peak_clip_collision_force = max(
+                        guide_peak_clip_collision_force,
+                        guide["clip_collision_force_n"],
+                    )
+                    guide_peak_clip_collision_penetration = max(
+                        guide_peak_clip_collision_penetration,
+                        guide["clip_collision_penetration_m"],
+                    )
             self.auditor.observe(
                 cable_tension_n=self.mechanics.tension(self.data),
                 self_collision=self._robot_collision(),
                 dt=float(self.model.opt.timestep),
             )
+        self._guide_contact_interval = {
+            "touching_cable": bool(guide_elements),
+            "elements": sorted(guide_elements),
+            "normal_force_n": guide_peak_force,
+            "penetration_m": guide_peak_penetration,
+            "contact_substeps": guide_contact_substeps,
+            "tip_touching_cable": bool(guide_tip_elements),
+            "tip_elements": sorted(guide_tip_elements),
+            "tip_normal_force_n": guide_peak_tip_force,
+            "tip_contact_substeps": guide_tip_contact_substeps,
+            "rear_lip_touching_cable": bool(guide_rear_lip_elements),
+            "rear_lip_elements": sorted(guide_rear_lip_elements),
+            "rear_lip_normal_force_n": guide_peak_rear_lip_force,
+            "rear_lip_contact_substeps": guide_rear_lip_contact_substeps,
+            "lead_touching_cable": bool(guide_lead_elements),
+            "lead_elements": sorted(guide_lead_elements),
+            "lead_normal_force_n": guide_peak_lead_force,
+            "lead_contact_substeps": guide_lead_contact_substeps,
+            "clip_collision_force_n": guide_peak_clip_collision_force,
+            "clip_collision_penetration_m": guide_peak_clip_collision_penetration,
+            "clip_collision_geoms": sorted(guide_clip_collision_geoms),
+        }
         mujoco.mj_forward(self.model, self.data)
         self._step_count += 1
         material = self.mechanics.state(self.data)

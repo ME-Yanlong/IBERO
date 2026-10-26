@@ -192,7 +192,6 @@ def main():
         report["checks"]["counterfactuals"] = all(
             x["passed"] for x in r if x["case"] != "normal"
         )
-    simulation_source_hash.cache_clear()
     report["checks"]["frozen_source"] = source == simulation_source_hash()
     report["passed"] = all(report["checks"].values())
     (output / "report.json").write_text(

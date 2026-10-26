@@ -78,7 +78,6 @@ def child(args):
         invalid_reason=env.process.invalid_reason,
         memory_after_run=process_memory(),
     )
-    simulation_source_hash.cache_clear()
     report["frozen_source"] = simulation_source_hash() == source
     report["passed"] = (
         report["frozen_source"] and not env._done and bool(env.stock.events)

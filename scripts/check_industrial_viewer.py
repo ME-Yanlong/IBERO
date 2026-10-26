@@ -208,7 +208,6 @@ def main():
     app.run()
     if hasattr(env, "close"):
         env.close()
-    simulation_source_hash.cache_clear()
     report["source_unchanged_during_run"] = simulation_source_hash() == source_hash
     report["passed"] = all(report.values()) and "error" not in report
     report["source_hash"] = source_hash

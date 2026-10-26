@@ -47,7 +47,6 @@ def main():
         )
     print("Transaction/replay tests exit", tests.returncode, flush=True)
     probe = probe_benchmark()
-    simulation_source_hash.cache_clear()
     report = {
         "source_hash": source,
         "frozen_source": source == simulation_source_hash(),

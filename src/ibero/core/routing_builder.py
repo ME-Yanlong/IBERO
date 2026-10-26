@@ -29,6 +29,11 @@ class RoutingRobotHandles:
     right_pad_geom_ids: tuple[int, ...]
     left_robot_geom_ids: frozenset[int]
     right_robot_geom_ids: frozenset[int]
+    guide_tip_site_id: int | None
+    guide_nose_geom_id: int | None
+    guide_rear_lip_geom_id: int | None
+    guide_lead_tip_site_id: int | None
+    guide_lead_geom_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,61 @@ def _clip_quaternion(tangent="horizontal"):
     return result
 
 
+def _add_right_offset_nose(spec: mujoco.MjSpec) -> None:
+    """可选真实压线头：右夹爪保持在线夹外，细端通过实体接触推线。"""
+    base = spec.body("right_base")
+    elbow = np.array([-0.041, 0.037, 0.090])
+    shaft_end = np.array([-0.041, 0.037, 0.132])
+    # 两段细杆与右夹爪基座刚性相连；不施加独立电机、吸附或位姿覆盖。
+    for name, start, end in (
+        ("bridge", np.array([0.0, 0.0, 0.090]), elbow),
+        ("nose", elbow, shaft_end),
+    ):
+        base.add_geom(
+            name=f"right_cable_guide_{name}",
+            type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+            fromto=np.r_[start, end],
+            size=[0.0025],
+            mass=0.008,
+            rgba=[0.12, 0.82, 0.88, 1],
+            friction=[0.65, 0.005, 0.0001],
+        )
+    # 短实体唇是唯一进入夹具附近的压线面；原前伸杆曾碰夹臂，故裁到此处。
+    # 线仍可从侧面滑脱，不添加等式约束或线束位姿覆盖。
+    base.add_geom(
+        name="right_cable_guide_rear_lip",
+        type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+        fromto=np.r_[shaft_end, shaft_end + np.array([-0.007, 0.0, 0.0])],
+        size=[0.002],
+        mass=0.002,
+        rgba=[0.95, 0.48, 0.15, 1],
+        friction=[0.65, 0.005, 0.0001],
+    )
+    # 先导鼻相对压线唇侧偏约10mm：绕开夹臂，同时让后唇仍可接线。
+    lead_elbow = shaft_end + np.array([0.0065, 0.0, 0.0])
+    lead_tip = lead_elbow + np.array([0.0, 0.0, 0.020])
+    for name, start, end in (
+        ("lead_bridge", shaft_end, lead_elbow),
+        ("lead_nose", lead_elbow, lead_tip),
+    ):
+        base.add_geom(
+            name=f"right_cable_guide_{name}",
+            type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+            fromto=np.r_[start, end],
+            size=[0.0025], mass=0.004,
+            rgba=[0.75, 0.68, 0.16, 1],
+            friction=[0.65, 0.005, 0.0001],
+        )
+    base.add_site(
+        name="right_guide_tip", pos=shaft_end + np.array([-0.0035, 0.0, 0.0]),
+        size=[0.003], rgba=[0.1, 1, 0.3, 1],
+    )
+    base.add_site(
+        name="right_guide_lead_tip", pos=lead_tip,
+        size=[0.003], rgba=[1, 0.2, 0.15, 1],
+    )
+
+
 def compile_routing(config):
     """保留旧 G1 资产和现有材料力律；新组件只在布线 schema 下组合。"""
     spec = _spec_from_snapshot(G1_XML)
@@ -66,6 +126,8 @@ def compile_routing(config):
     _remove_native_hand_visuals(spec)
     for side in ("left", "right"):
         _add_robotiq_gripper(spec, side)
+    if config["workcell"].get("guide_tool") == "right_offset_nose_v1":
+        _add_right_offset_nose(spec)
     spec.option.timestep = float(config["physics"]["timestep_s"])
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
     spec.option.iterations = 100
@@ -81,12 +143,14 @@ def compile_routing(config):
     )
     # 三个实体支点留下两段夹爪可进入的空档，防止下指垫被供料板挡住。
     # 机器人须先在空档夹住材料，再把线移离供料架。
-    for index, y in enumerate((0.145, 0.0, -0.145)):
+    support_y = config["workcell"].get("feed_support_y_m", [0.145, 0.0, -0.145])
+    support_half_y = config["workcell"].get("feed_support_half_y_m", [0.012, 0.012, 0.012])
+    for index, (y, half_y) in enumerate(zip(support_y, support_half_y)):
         spec.worldbody.add_geom(
             name=f"feed_support_{index}",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             pos=[0.405, y, 0.850],
-            size=[0.022, 0.012, 0.009],
+            size=[0.022, half_y, 0.009],
             rgba=[0.26, 0.38, 0.50, 1],
             friction=[0.65, 0.005, 0.0001],
         )
@@ -154,5 +218,11 @@ def compile_routing(config):
         _pad_geom_ids(model, "right"),
         _robot_side_geoms(model, "left"),
         _robot_side_geoms(model, "right"),
+        model.site("right_guide_tip").id if config["workcell"].get("guide_tool") else None,
+        model.geom("right_cable_guide_nose").id if config["workcell"].get("guide_tool") else None,
+        model.geom("right_cable_guide_rear_lip").id if config["workcell"].get("guide_tool") else None,
+        model.site("right_guide_lead_tip").id if config["workcell"].get("guide_tool") else None,
+        tuple(model.geom(f"right_cable_guide_{name}").id for name in ("lead_bridge", "lead_nose"))
+        if config["workcell"].get("guide_tool") else (),
     )
     return CompiledRouting(model, handles, cable, tuple(names), clip_params)

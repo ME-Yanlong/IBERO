@@ -40,7 +40,6 @@ def main():
             section_image(stock, output / f"{shape}_{cell}.png")
             rows.append(row)
             print(row, flush=True)
-    simulation_source_hash.cache_clear()
     frozen = source == simulation_source_hash()
     report = {
         "scope": "geometry_only",

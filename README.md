@@ -35,6 +35,16 @@ python -m ibero.demo --env plate_milling --shape through_hole --viewer
 
 窗口初始等待，Enter 运行/重跑，P 暂停、N 单步、B 后退、R 回放。加工窗口的 C 只切换视觉切屑；回看材料使用独立模型/账本，不改变 live 仿真。当前工业细步长仿真明显慢于实时，不能用播放倍率加速物理求解。加工参数、索引和假设见 [工作站说明](scenes/plate_milling/README.md) 与 [台架说明](scenes/milling_bench/README.md)。
 
+## Core-0.2 布线任务预览
+
+`feature/core02-routing-tasks` 增加立式板、自由 Flex 线束、实体弹性侧向线夹和独立任务判据。单夹 B1 与三夹直线 B2 的 seed 0 完整回合已通过；L 形 B3 与开口矩形 B4 仍为开发候选。当前冻结四场景快检为 **2/4**：B3/B4 均在完整回合后超时，不能视为 0.2 验收通过。工位碰撞、线材弧长和后续设计门槛见 [Core-0.2 任务书与开发日志](docs/05_Core-0.2_任务场景与布线开发任务书.md)。
+
+```powershell
+python -m ibero.demo --env cable_clip_insert --viewer --seed 0
+python -m ibero.demo --env cable_route_straight --viewer --seed 0
+python -m ibero.verify_routing --suite quick
+```
+
 ## Current scope
 
 - fixed-base Unitree G1 upper body with two Robotiq 2F-85 grippers and pinch sites;

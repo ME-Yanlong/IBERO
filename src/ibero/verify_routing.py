@@ -236,7 +236,6 @@ def build_report(
         name not in SCENES for name in selected_scenes
     ):
         raise ValueError("Scene selection must contain distinct known routing scenes")
-    simulation_source_hash.cache_clear()
     source_hash = simulation_source_hash()
     report = {
         "suite": suite,
@@ -267,7 +266,7 @@ def build_report(
     for scene_name in selected_scenes if suite != "bench" else ():
         for seed in chosen_seeds:
             trace_path = (
-                output.parent / f"{scene_name}_seed{seed}.npz"
+                output.parent / f"{output.stem}_{scene_name}_seed{seed}.npz"
                 if suite == "quick" and scene_name == "cable_clip_insert" else None
             )
             checks.append(_run_named(
@@ -310,7 +309,6 @@ def build_report(
         report["passed"] = bool(
             non_episode_ok and all(bool(row["passed"]) for row in episodes)
         )
-    simulation_source_hash.cache_clear()
     report["source_unchanged_during_run"] = simulation_source_hash() == source_hash
     if report["passed"] is not None:
         report["passed"] &= report["source_unchanged_during_run"]

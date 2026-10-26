@@ -28,7 +28,8 @@ python -m ibero.demo --env cable_route_straight --viewer --seed 0
 # 菜谱贡献样例：线夹横移 6 mm，仍复用同一物理 Core
 python -m ibero.demo --env cable_clip_insert --scene scenes/cable_clip_insert_offset --seed 0
 
-# L 形、开口矩形仍是可运行的候选任务；当前参考控制器会报告弯曲半径失效
+# L 形、开口矩形仍是未通过的候选任务；当前参考控制器完整回合会超时
+# 物理障碍与下一步设计见 docs/05_Core-0.2_任务场景与布线开发任务书.md
 python -m ibero.demo --env cable_route_l --seed 0
 python -m ibero.demo --env cable_route_rectangle --seed 0
 

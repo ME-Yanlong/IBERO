@@ -57,7 +57,6 @@ def snapshot(scene, *, robot, frames):
         completed += 1
         if env._done:
             break
-    simulation_source_hash.cache_clear()
     return dict(
         scope="read_only_digest_evidence_not_full_task_or_cross_source_trace_replay",
         source_hash=source,

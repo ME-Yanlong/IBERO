@@ -141,8 +141,7 @@ def latch_report(*, workers=3):
         "measured_calibration",
     ]
     report["passed"] = all(report["checks"].values())
-    # 常规运行会缓存源码 hash；结束复查必须重新读文件，不能比较同一缓存两次。
-    simulation_source_hash.cache_clear()
+    # 结束复查直接重新读取源码，确认运行期间身份没有改变。
     report["source_unchanged_during_run"] = (
         simulation_source_hash() == report["simulation_source_hash"]
     )

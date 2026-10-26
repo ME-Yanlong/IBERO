@@ -58,7 +58,6 @@ def main():
         report["passed"] = report["loads"]["passed"] and result.returncode == 0
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"
-    simulation_source_hash.cache_clear()
     report["frozen_source"] = source == simulation_source_hash()
     report["passed"] &= report["frozen_source"]
     report["wall_seconds"] = time.perf_counter() - started

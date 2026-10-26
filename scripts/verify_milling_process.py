@@ -272,7 +272,6 @@ def run_shape(job):
                     report.setdefault("artifact_errors", []).append(
                         f"trace: {type(error).__name__}: {error}"
                     )
-        simulation_source_hash.cache_clear()
         report["frozen_source"] = (
             report.get("manifest", {}).get("source_hash") == simulation_source_hash()
         )

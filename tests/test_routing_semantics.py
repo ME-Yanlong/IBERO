@@ -89,9 +89,13 @@ def test_one_clip_requires_entry_bimanual_grasp_and_hands_free_hold():
     # 入座前观察夹口外的线段，并确认双手真实保持。
     result = task.evaluate(state(line(0.033), [clip()]), audit())
     assert not result.success
+    assert result.metrics["a_mouth_now"]
     # 入座时夹爪仍托住，不可成功。
     result = task.evaluate(state(line(), [clip()], step=2), audit())
     assert result.metrics["a_retained"]
+    assert result.metrics["a_mouth_seen"]
+    assert not result.metrics["a_mouth_now"]
+    assert result.metrics["a_seated_now"]
     assert not result.success
     # 第一个松手采样未满保持时间。
     released = replace(state(line(), [clip()], step=3, both=False, clear=True),
@@ -167,3 +171,30 @@ def test_multiclip_requires_corridor_even_when_both_clips_seated():
     assert result.metrics["retained_count"] == 2
     assert result.metrics["path_error_m"] > goal.corridor_m
     assert not result.success
+
+
+def test_free_end_zone_rejects_outside_endpoint_then_accepts_inside_endpoint():
+    goal = RoutingGoal(
+        ("a",), hold_time_s=0.1,
+        require_entry_history=False, require_two_hand_grasp=False,
+        free_end_center_m=(0.0, 0.12, 0.008), free_end_radius_m=0.01,
+    )
+    task = CableRoutingTask(goal)
+    outside = line()
+    outside[-1, 1] = 0.14
+    released = replace(
+        state(outside, [clip()], both=False, clear=True),
+        grasps={"left_gripper": False, "right_gripper": False},
+    )
+    result = task.evaluate(released, audit())
+    assert result.metrics["a_retained"]
+    assert not result.metrics["end_zone_ok"]
+    assert not result.success
+    inside = replace(
+        released,
+        elapsed_steps=2,
+        extra={"routing": {**released.extra["routing"], "cable_points_m": line()}},
+    )
+    result = task.evaluate(inside, audit())
+    assert result.metrics["end_zone_ok"]
+    assert result.success

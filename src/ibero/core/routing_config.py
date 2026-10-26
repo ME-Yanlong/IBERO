@@ -73,6 +73,20 @@ def validate_routing(config, constraints):
     if not mechanism["mouth_half_width_m"] < mechanism["wire_radius_m"] < mechanism["seat_half_width_m"]:
         raise ValueError("Clip mouth/seat must straddle cable radius")
     workcell = _mapping(config["workcell"], "workcell")
+    if not {"board", "clips"}.issubset(workcell) or set(workcell) - {
+        "board", "clips", "guide_tool", "feed_support_y_m", "feed_support_half_y_m"
+    }:
+        raise ValueError("Routing workcell requires board/clips and known optional fields")
+    if "guide_tool" in workcell and workcell["guide_tool"] != "right_offset_nose_v1":
+        raise ValueError("Unsupported routing guide tool")
+    if "feed_support_y_m" in workcell:
+        feed_y = _vector(workcell["feed_support_y_m"], "workcell.feed_support_y_m")
+        if any(abs(value) > 0.25 for value in feed_y) or not feed_y[0] > feed_y[1] > feed_y[2]:
+            raise ValueError("Feed supports must be ordered within the board width")
+    if "feed_support_half_y_m" in workcell:
+        widths = _vector(workcell["feed_support_half_y_m"], "workcell.feed_support_half_y_m")
+        if any(not 0.005 <= value <= 0.05 for value in widths):
+            raise ValueError("Feed support half widths must be within [5, 50] mm")
     board = _mapping(workcell["board"], "board")
     _vector(board["center_m"], "board.center_m")
     if any(value <= 0 for value in _vector(board["half_size_m"], "board.half_size_m")):
@@ -92,6 +106,23 @@ def validate_routing(config, constraints):
             raise ValueError(f"clips[{i}].tangent must be horizontal or vertical")
     if len(set(ids)) != len(ids):
         raise ValueError("Clip IDs must be unique")
+    # 同向线夹的固定背座是实体碰撞盒。若两盒互穿，指垫会被下一只
+    # 夹座挡住，物理回合尚未开始就已不存在可行的压入通道。
+    base_half_along = mechanism["jaw_width_m"] / 2 + 0.003
+    base_half_across = (
+        mechanism["seat_half_width_m"] + mechanism["jaw_thickness_m"] + 0.004
+    )
+    for i, first in enumerate(clips):
+        for second in clips[i + 1:]:
+            tangent = first.get("tangent", "horizontal")
+            if tangent != second.get("tangent", "horizontal"):
+                continue
+            longitudinal = 1 if tangent == "horizontal" else 2
+            transverse = 2 if tangent == "horizontal" else 1
+            a, b = first["origin_m"], second["origin_m"]
+            if (abs(a[longitudinal] - b[longitudinal]) < 2 * base_half_along
+                    and abs(a[transverse] - b[transverse]) < 2 * base_half_across):
+                raise ValueError(f"Clip bases overlap: {first['id']} and {second['id']}")
     init = _mapping(config["initialization"], "initialization")
     if set(init) not in ({"cable_start_m", "cable_end_m"}, {"cable_start_m", "cable_end_m", "cable_translation_jitter_m"}):
         raise ValueError("Routing initialization fields mismatch")
@@ -115,6 +146,15 @@ def validate_routing(config, constraints):
         raise ValueError("Cable length insufficient for target route")
     for key in ("corridor_m", "hold_time_s", "speed_limit_m_s"):
         _number(goal[key], f"routing_goal.{key}", positive=True)
+    if ("free_end_center_m" in goal) != ("free_end_radius_m" in goal):
+        raise ValueError("Free-end center and radius must be specified together")
+    if "free_end_center_m" in goal:
+        _vector(goal["free_end_center_m"], "routing_goal.free_end_center_m")
+        _number(goal["free_end_radius_m"], "routing_goal.free_end_radius_m", positive=True)
+    if "free_end_index" in goal and (
+        type(goal["free_end_index"]) is not int or goal["free_end_index"] not in (0, -1)
+    ):
+        raise ValueError("routing_goal.free_end_index must be first or last cable vertex")
     limits = _mapping(constraints, "constraints")
     if set(limits) != {"cable", "clip", "collision"}:
         raise ValueError("Routing constraint keys mismatch")

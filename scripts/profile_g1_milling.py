@@ -41,7 +41,6 @@ def main():
         last_info=info,
         control_frame_method_samples=methods,
     )
-    simulation_source_hash.cache_clear()
     report["source_unchanged"] = (
         report["manifest"]["source_hash"] == simulation_source_hash()
     )

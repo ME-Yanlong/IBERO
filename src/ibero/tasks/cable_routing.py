@@ -41,6 +41,15 @@ class RoutingGoal:
             hold_time_s=float(goal["hold_time_s"]),
             speed_limit_m_s=float(goal["speed_limit_m_s"]),
             min_bend_radius_m=float(cable["minimum_bend_radius_m"]),
+            free_end_center_m=(
+                tuple(float(value) for value in goal["free_end_center_m"])
+                if "free_end_center_m" in goal else None
+            ),
+            free_end_radius_m=(
+                float(goal["free_end_radius_m"])
+                if "free_end_radius_m" in goal else None
+            ),
+            free_end_index=int(goal.get("free_end_index", -1)),
         )
 
     def __post_init__(self):
@@ -224,6 +233,9 @@ class CableRoutingTask(TaskSpec):
             for clip_id in self.goal.clip_ids:
                 metrics[f"{clip_id}_retained"] = retained[clip_id]
                 metrics[f"{clip_id}_mouth_seen"] = self.seen_mouth[clip_id]
+                # 历史入嘴事件用于证据链；控制器还需知道当前帧是否仍在夹口。
+                metrics[f"{clip_id}_mouth_now"] = matches[clip_id].mouth
+                metrics[f"{clip_id}_seated_now"] = matches[clip_id].seated
                 arc = matches[clip_id].arc_m
                 metrics[f"{clip_id}_arc_m"] = -1.0 if arc is None else float(arc)
             self.last_metrics = metrics

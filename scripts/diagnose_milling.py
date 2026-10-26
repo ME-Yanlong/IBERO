@@ -67,7 +67,6 @@ def main():
         if env._done:
             break
     expected = math.pi * 0.004**2 * 0.004
-    simulation_source_hash.cache_clear()
     report = {
         "manifest": manifest,
         "frozen_source": manifest["source_hash"] == simulation_source_hash(),

@@ -159,7 +159,6 @@ def main():
     finally:
         if views is not None:
             views.close()
-        simulation_source_hash.cache_clear()
         report["frozen_source"] = simulation_source_hash() == source
         report["passed"] &= report["frozen_source"]
         (args.output / "report.json").write_text(

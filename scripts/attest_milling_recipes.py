@@ -37,7 +37,6 @@ def attest(report_path, scene_path):
         or env.stock.state_hash() != before_hash
     ):
         raise RuntimeError("Read-only trace validation unexpectedly modified state")
-    simulation_source_hash.cache_clear()
     if simulation_source_hash() != report["manifest"]["source_hash"]:
         raise ValueError("Source changed during recipe attestation")
     return {

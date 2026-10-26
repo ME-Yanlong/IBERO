@@ -41,6 +41,9 @@ class Trace:
         self.env = env
         self.states = []
         self.infos = []
+        self.source_hash = simulation_source_hash()
+        self.scene_hash = env.scene.scene_hash
+        self.asset_hash = vendored_robot_asset_hash()
 
     def append(self, info):
         state = np.empty(mujoco.mj_stateSize(self.env.model, self.spec))
@@ -58,12 +61,18 @@ class Trace:
 
     def save(self, path):
         path = Path(path)
+        if (
+            simulation_source_hash() != self.source_hash
+            or self.env.scene.scene_hash != self.scene_hash
+            or vendored_robot_asset_hash() != self.asset_hash
+        ):
+            raise ValueError("Replay source/scene/asset changed during recording")
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "scene_hash": self.env.scene.scene_hash,
+            "scene_hash": self.scene_hash,
             "seed": int(self.env.np_random_seed),
-            "source_hash": simulation_source_hash(),
-            "asset_hash": vendored_robot_asset_hash(),
+            "source_hash": self.source_hash,
+            "asset_hash": self.asset_hash,
             "mujoco_version": mujoco.__version__,
             "infos": self.infos,
         }

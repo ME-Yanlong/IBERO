@@ -228,7 +228,6 @@ def main():
         )
     except Exception as error:
         report["exception"] = f"{type(error).__name__}: {error}"
-    simulation_source_hash.cache_clear()
     report["frozen_source"] = report["source_hash"] == simulation_source_hash()
     report["passed"] &= report["frozen_source"]
     (out / "report.json").write_text(

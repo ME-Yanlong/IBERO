@@ -37,6 +37,9 @@ mechanism:
   friction: 0.4
   parameter_source: provisional
 workcell:
+  guide_tool: right_offset_nose_v1
+  feed_support_y_m: [0.145, 0.0, -0.170]
+  feed_support_half_y_m: [0.012, 0.012, 0.025]
   board:
     center_m: [0.515, 0.0, 0.85]
     half_size_m: [0.008, 0.30, 0.20]
@@ -48,10 +51,10 @@ workcell:
       origin_m: [0.470, 0.000, 0.862]
       tangent: horizontal
     - id: clip_03
-      origin_m: [0.470, -0.040, 0.882]
+      origin_m: [0.470, -0.060, 0.892]
       tangent: vertical
     - id: clip_04
-      origin_m: [0.470, -0.040, 0.922]
+      origin_m: [0.470, -0.060, 0.932]
       tangent: vertical
 initialization:
   cable_start_m: [0.420574, 0.148619, 0.888221]
@@ -61,12 +64,16 @@ routing_goal:
   route_points_m:
     - [0.462, 0.040, 0.862]
     - [0.462, 0.000, 0.862]
-    - [0.462, -0.020, 0.862]
-    - [0.462, -0.034, 0.868]
-    - [0.462, -0.040, 0.882]
-    - [0.462, -0.040, 0.922]
+    - [0.462, -0.035, 0.862]
+    - [0.462, -0.0527, 0.8693]
+    - [0.462, -0.060, 0.887]
+    - [0.462, -0.060, 0.892]
+    - [0.462, -0.060, 0.932]
   corridor_m: 0.015
   hold_time_s: 0.20
   speed_limit_m_s: 0.04
+  free_end_center_m: [0.462, -0.060, 0.932]
+  free_end_radius_m: 0.050
+  free_end_index: -1
 render:
   cameras: [front, side]
