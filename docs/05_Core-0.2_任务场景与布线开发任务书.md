@@ -591,6 +591,10 @@ python -m ibero.verify_routing --suite gui
 
 **B4 左端主动推线的有界停点：**增加右尾实体托点后，原长线可从 reset 双手抓持、前两夹保持、滑台让位并在第 203 步右手真实重抓，最小弯曲半径 23.68 mm；但没有足够材料弧长。第一版实体推板与左指垫及固定支架干涉，电机行程不等于材料馈移。第二版窄推板避开固定架，在第 97–113 步与 Flex 真实接触，C1/C2 暂时保持且 R≥23.68 mm，C2 实测弧位由约 165.5 mm 降至 147.91 mm，净馈移约 17.6 mm，仍缺 42.95 mm；第 114 步 C1 脱扣，推板仍与左指垫发生接触。根据预设停点不继续毫米级推板调参。四组逐步对照与物理状态见 `artifacts/core02_b4_feed_trials/README.md`。B4 仍不合格；重设余线工位/初始布局须保留六夹路径与原安全判据，已向用户确认方向。
 
+**额度中断后的开发状态复核（2026-11-01）：**后续实验仍保留在本机忽略的 `artifacts/`，没有将失败工具或长线工位接入正式场景。B3 的隔离工位让原 2F85 真抓线、前两夹入座、实体滑台退让后沿线送线；叠加真实 R18 转角辊时，第 123 步 C3 截面材料弧差约 82 mm、线高与 C3 座高对齐，随后 30 个控制周期 C1/C2 和右手抓持均保持，最小弯曲半径 24.82 mm、峰张力 2.34 N、右手与夹具接触 0 N。线心当时仍在 X≈0.432 m，离 C3 口/座尚有约 28/45 mm，**第三夹未入座**。细叉压头静态预检 `artifacts/core02_b3_clip_geometry/fork_feed_precheck.json` 的基线状态 `c2=false`，不能接在上述两夹保持的正例后宣称已跑通；新工具须从 reset 重验。B3 正例前置状态与局部工位反例见 `artifacts/core02_b3_workcell_redesign/findings.md`。
+
+B4 的 380 mm 近直线实体供线试验曾在 seed 0 第 115 步让 C1/C2 同时保持，C2 后实测余线约 231 mm，比六夹剩余路线多约 34 mm，峰张力 6.89 N；直接松开右手会在第 155 步形成 17.31 mm 急弯。保持右手抓持可到第 320 步仍保有前两夹，最小半径约 28 mm，但左手跨区换抓不可达。阶段式实体升降托槽可保持前两夹并抬升约 56 mm，松手后长尾仍从机器人侧滑出；固定护边或新增升降护边分别造成早期弯曲超限、与旧支架/右手相撞。最后一份 `artifacts/core02_b4_longline_v21_trials/longline_v21_seed0.json` 在第 139 步因半径 17.53 mm 失败，**不是六夹成功回合**。额度中断时没有后台仿真；正式源码最后完整快检仍为 B1/B2 通过、B3/B4 超时的 2/4。实验性 `routing_patterns.py` 抓点/工位偏移改动尚未提交，Ruff 与 16 项相关测试通过，但不能替代四场景任务验收。
+
 **旧功能回归：** `python -m ibero.verify_industrial --suite quick` 在冻结源码后生成 `artifacts/industrial_core01/verification/20261026T100540008203Z/report.json`，224 项测试通过，`passed=true`、`frozen_source=true`，耗时约 308 秒。该报告的作用域字段明确不是自动关闭旧 G9；先前一次运行虽 224 项通过但源码在并行开发中改变，`frozen_source=false`，已由本次冻结复跑替代。
 
 **本轮旧功能复核：**源码摘要 `f5cd18720b930a8dd9abfc470687d3c89dcbf569d7a831043367833ff658f3ef` 的完整 `verify_industrial --suite quick` 报告为 `artifacts/industrial_core01/verification/20261026T135411979733Z/report.json`，`231 passed`、`passed=true`、`frozen_source=true`、退出码 0，耗时约 321 秒。首次运行因源码哈希去缓存后部分独立验证脚本仍调用旧 `cache_clear()` 出现 3 项属性错误，已清理所有旧调用；失败报告仍保留在 `20261026T134736768188Z/`，此次完整复跑覆盖该失败。此 quick 的作用域仍不自动关闭旧 G9。
