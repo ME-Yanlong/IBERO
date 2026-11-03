@@ -1,0 +1,10 @@
+{
+  "title": "双臂线束张力控制",
+  "seed": 0,
+  "video_duration_s": 13.08,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "25a5c4b70b1b450e740436b3d32dc295d1da5144666671f7235df7ea72c20c93",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

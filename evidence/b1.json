@@ -1,0 +1,10 @@
+{
+  "title": "单夹裸线装配",
+  "seed": 0,
+  "video_duration_s": 8.5,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "2529129b64a8db02ad6a8271d1630e8beccb7012004b1d13f237e738bb16b4d7",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

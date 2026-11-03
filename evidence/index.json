@@ -1,0 +1,13 @@
+{
+  "b1": "evidence/b1.json",
+  "b2": "evidence/b2.json",
+  "b3": "evidence/b3.json",
+  "b4": "evidence/b4.json",
+  "latch": "evidence/latch.json",
+  "unplug": "evidence/unplug.json",
+  "hole": "evidence/hole.json",
+  "slot": "evidence/slot.json",
+  "pocket": "evidence/pocket.json",
+  "handover": "evidence/handover.json",
+  "stretch": "evidence/stretch.json"
+}

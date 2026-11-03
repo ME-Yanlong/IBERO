@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="canonical" href="https://me-yanlong.github.io/IBERO/">
+  <meta property="og:title" content="IBERO · 工业双臂具身操作平台">
+  <meta property="og:description" content="柔性布线、弹性卡扣与铣削加工：探索 Core 能力与 11 个真实仿真演示。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://me-yanlong.github.io/IBERO/">
+  <meta property="og:image" content="https://me-yanlong.github.io/IBERO/media/hero.webp">
+  <meta name="theme-color" content="#0b100e">
+  <meta name="description" content="IBERO 工业双臂具身操作平台：柔性线束、弹性卡扣与材料去除。探索 Core 仿真底座和 11 个真实录制的任务演示。">
+  <title>IBERO — 让工业操作成为可研究的任务</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b100e'/%3E%3Cpath d='M15 45V19h12v16h10V19h12v26H37V35H27v10Z' fill='%23c5f878'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="data.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">跳到正文</a>
+  <header class="header">
+    <a class="brand" href="#" aria-label="IBERO 首页"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 31V9h9v14h14V9h9v22h-9v-8H13v8Z" fill="currentColor"/></svg><span>IBERO<span class="brand-sub">INDUSTRIAL BIMANUAL</span></span></a>
+    <nav aria-label="主导航"><a href="#platform">平台</a><a href="#core">Core 底座</a><a href="#tasks">任务册 <span>11</span></a><a href="#build">共建场景</a></nav>
+    <a class="repo-link" href="https://github.com/ME-Yanlong/IBERO" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+  <main id="main">
+    <section class="hero" id="platform">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> INDUSTRIAL ROBOTICS RESEARCH <span class="edition">CORE 0.2 / PREVIEW</span></p>
+        <h1>以物理为底座，<br>让工业操作<br>成为<span>可研究的任务。</span></h1>
+        <p class="hero-lead">柔性线束、弹性卡扣、材料去除。<br>从接触发生的那一刻，到一道工序真正完成。</p>
+        <div class="actions"><a class="button primary" href="#tasks">探索任务册 <span>↗</span></a><a class="text-link" href="#core">走进 Core <span>↓</span></a></div>
+        <div class="hero-stats"><div><strong>11<span>个</span></strong><p>可播放演示</p></div><div><strong>04<span>级</span></strong><p>递进布线任务</p></div><div><strong>03<span>类</span></strong><p>材料与加工机制</p></div></div>
+      </div>
+      <div class="hero-visual">
+        <div class="visual-top"><span><i></i> SIMULATION FOOTAGE</span><span>MuJoCo / G1</span></div>
+        <video id="hero-video" autoplay muted loop playsinline preload="metadata" poster="media/hero.webp" aria-label="真实仿真片段，八倍速展示剪辑"><source src="media/hero.mp4" type="video/mp4"></video>
+        <div class="visual-cross cross-one">+</div><div class="visual-cross cross-two">+</div>
+        <div class="hero-caption"><div><span class="micro">FROM MATERIAL TO OPERATION</span><strong>一条线，也是一整套物理问题。</strong></div><button id="hero-toggle" type="button" aria-label="暂停首页短片">Ⅱ</button></div>
+        <div class="visual-bottom"><span>真实仿真片段 · 展示剪辑 8×</span><span>完整任务支持 1× 回放 ↙</span></div>
+      </div>
+      <div class="hero-bottom"><span>Industrial Bimanual Embodied Robotic Operations</span><a href="#idea">继续探索 <span>↓</span></a></div>
+    </section>
+
+    <section class="idea section" id="idea">
+      <p class="eyebrow">01 / WHY IBERO</p>
+      <div class="idea-layout"><h2>机器人要学会的，<br>不止是<span>抓起来。</span></h2><div><p class="large-copy">要张紧一根线，按下一个锁舌，<br>也要知道材料在哪里被真正去除。</p><p class="muted">IBERO 面向工业装配、拆解与再制造，把材料响应、双臂协同和工艺完成条件放进同一套仿真任务中。我们先做好可复用的物理底座，再让社区以“菜谱”的方式扩展场景。</p></div></div>
+      <div class="principles"><article><span>01</span><h3>交互有物理依据</h3><p>接触、弹性与工艺载荷共同决定对象如何响应。</p></article><article><span>02</span><h3>完成有明确语义</h3><p>看路径、保持、分离与形状，而不只看末端位置。</p></article><article><span>03</span><h3>场景可以被复用</h3><p>物理组件由 Core 承担，新任务聚焦配置与规则。</p></article></div>
+    </section>
+
+    <section class="core section" id="core">
+      <div class="section-heading"><div><p class="eyebrow">02 / THE PHYSICAL FOUNDATION</p><h2>Core，让交互<span>站得住。</span></h2></div><p>从物理引擎到任务判据，<br>把工业操作拆成可理解、可组合的组件。</p></div>
+      <div class="core-workbench">
+        <div class="core-tabs" role="tablist" aria-label="Core 组件">
+          <button role="tab" id="core-tab-cable" aria-selected="true" aria-controls="core-panel" data-core="cable"><span>01</span>柔性线束 <small>FLEX & MATERIAL</small><b>↗</b></button>
+          <button role="tab" id="core-tab-contact" aria-selected="false" aria-controls="core-panel" data-core="contact" tabindex="-1"><span>02</span>弹性与接触 <small>CONTACT & COMPLIANCE</small><b>↗</b></button>
+          <button role="tab" id="core-tab-cutting" aria-selected="false" aria-controls="core-panel" data-core="cutting" tabindex="-1"><span>03</span>材料去除 <small>MATERIAL REMOVAL</small><b>↗</b></button>
+          <button role="tab" id="core-tab-eval" aria-selected="false" aria-controls="core-panel" data-core="eval" tabindex="-1"><span>04</span>独立任务裁判 <small>SEMANTICS & AUDIT</small><b>↗</b></button>
+        </div>
+        <div class="core-panel" id="core-panel" role="tabpanel" aria-labelledby="core-tab-cable" tabindex="0"></div>
+      </div>
+      <div class="architecture"><span class="micro">ONE PHYSICAL LOOP</span><div class="arch-flow"><div><small>AUTHOR</small><strong>场景菜谱</strong><span>配置 / 任务 / 约束</span></div><b>→</b><div><small>SIMULATE</small><strong>机器人 × 材料</strong><span>MuJoCo 动力学与接触</span></div><b>→</b><div><small>OBSERVE</small><strong>状态与受力</strong><span>形状 / 接触 / 工艺记录</span></div><b>→</b><div><small>EVALUATE</small><strong>语义与审计</strong><span>完成条件 / 越限 / 复现</span></div></div></div>
+    </section>
+
+    <section class="task-section section" id="tasks">
+      <div class="section-heading"><div><p class="eyebrow">03 / THE TASK ATLAS</p><h2>从一次接触，<br>到一整条<span>工艺链。</span></h2></div><div class="atlas-intro"><p>11 段真实录制，四类任务。<br>选一个场景，看看它如何发生。</p><button class="text-link" id="presentation-start" type="button">开始逐项宣讲 <span>↗</span></button></div></div>
+      <div class="atlas-bar"><div class="filters" role="group" aria-label="筛选任务"><button data-filter="all" class="active" aria-pressed="true">全部 <span>11</span></button><button data-filter="routing" aria-pressed="false">柔性布线 <span>4</span></button><button data-filter="release" aria-pressed="false">卡扣拆卸 <span>2</span></button><button data-filter="machining" aria-pressed="false">铣削加工 <span>3</span></button><button data-filter="foundation" aria-pressed="false">基础操作 <span>2</span></button></div><span class="atlas-note">录制回放 · 可切换倍速</span></div>
+      <div class="task-grid" id="task-grid"></div>
+      <p class="atlas-footnote">B3 / B4 为最新局部工位的 seed 0 完整轨迹；其余为历史版本录制。每个演示均提供简要结果与视频校验记录。回放不需要运行仿真。</p>
+      <div class="routing-strip"><div><span class="eyebrow">HARNESS / A PROGRESSIVE CHALLENGE</span><h3>一套材料机制，四级任务难度。</h3></div><ol><li><b>B1</b><span>单夹压入</span></li><li><b>B2</b><span>直线布线</span></li><li><b>B3</b><span>L 形转角</span></li><li><b>B4</b><span>开口矩形</span></li></ol></div>
+    </section>
+
+    <section class="build section" id="build">
+      <div class="section-heading"><div><p class="eyebrow">04 / BUILD WITH IBERO</p><h2>从一个任务，<br>走向<span>更多工序。</span></h2></div><p>场景设计沿用统一物理底座。<br>一份配置、一份任务定义，再加一组约束。</p></div>
+      <div class="recipe-layout"><div class="recipe-roles"><article><span>P2 / 机械师</span><h3>选择机器人和工位</h3><p>G1 双臂、可选末端工具与实体夹具，组织可达的工作空间。</p></article><article><span>P3 / 材料专家</span><h3>定义物料如何响应</h3><p>线径、长度、质量、刚度、弯曲半径与允许受力，驱动可复用材料组件。</p></article><article><span>P4 / 菜谱作者</span><h3>定义任务怎样算完成</h3><p>组合物理对象与工艺步骤，明确完成、失败以及安全约束。</p></article></div>
+        <div class="recipe-code"><div class="code-tabs" role="tablist" aria-label="场景文件说明"><button id="recipe-tab-scene" role="tab" aria-selected="true" aria-controls="recipe-panel" data-recipe="scene">scene_config.yaml</button><button id="recipe-tab-task" role="tab" aria-selected="false" aria-controls="recipe-panel" data-recipe="task" tabindex="-1">task_spec.py</button><button id="recipe-tab-constraints" role="tab" aria-selected="false" aria-controls="recipe-panel" data-recipe="constraints" tabindex="-1">constraints.yaml</button></div><div id="recipe-panel" role="tabpanel" aria-labelledby="recipe-tab-scene" tabindex="0"></div><div class="code-footer"><span>组件分工示意 · 具体实现暂未公开</span><span>REUSABLE BY DESIGN ↗</span></div></div>
+      </div>
+      <div class="contribute"><div><p class="eyebrow">RESEARCH PREVIEW</p><h3>面向一种物料，<br>探索一道真实工序。</h3><p>从物理交互到任务完成，探索可扩展的工业双臂操作场景。</p></div><div class="contribute-actions"><a class="button primary" href="https://github.com/ME-Yanlong/IBERO" target="_blank" rel="noopener">查看项目仓库 <span>↗</span></a><a class="button secondary" href="#status">了解发布进展 <span>↓</span></a><small>完整仿真实现将结合论文与项目进展安排发布。</small></div></div>
+    </section>
+
+    <section class="scope section" id="status"><p class="eyebrow">05 / WHERE WE ARE</p><div class="scope-layout"><h2>先跑通交互，<br>再拓展<span>基准。</span></h2><div><div class="scope-item"><span class="status-dot"></span><div><h3>现在可以看到</h3><p>基于 MuJoCo 的双臂物理交互、三类材料／加工机制、场景菜谱与独立判据，以及可追溯的视频演示。当前动作由参考脚本控制器执行。</p></div></div><div class="scope-item future"><span>↗</span><div><h3>接下来一起完善</h3><p>继续完善工艺场景、多种子验证与真实材料标定。完整实现暂未公开，将结合论文与项目进展安排发布；当前仓库为历史阶段性内容。演示不代表完整 benchmark 或实物精度验证。</p></div></div></div></div></section>
+  </main>
+  <footer><a class="brand" href="#"><span>IBERO</span></a><p>工业级双臂具身智能操作基准平台<br><span>Built around physics. Grown through tasks.</span></p><div><a href="README.md" target="_blank">项目说明 ↗</a><a href="evidence/index.json" target="_blank">演示记录索引 ↗</a><a href="THIRD_PARTY_NOTICES.txt" target="_blank">第三方许可 ↗</a><small>Core 0.2 功能预览 · 第三方模型遵循各自许可</small></div></footer>
+  <dialog id="demo-dialog" aria-labelledby="demo-title"><div class="dialog-shell"><header class="dialog-header"><div><span class="micro" id="demo-code"></span><h2 id="demo-title"></h2></div><button class="icon-button" id="dialog-close" type="button" aria-label="关闭演示">✕</button></header><div class="demo-layout"><div class="player-column"><div class="video-wrap"><video id="demo-video" controls playsinline preload="metadata"></video><p id="video-error" hidden>视频暂时无法加载。请确认已解压完整文件夹，也可使用下方链接单独打开。</p></div><div class="player-tools"><div class="rate-controls" role="group" aria-label="播放倍速"><span>速度</span><button data-rate="0.5" aria-pressed="false">0.5×</button><button data-rate="1" class="active" aria-pressed="true">1×</button><button data-rate="2" aria-pressed="false">2×</button><button data-rate="4" aria-pressed="false">4×</button><button data-rate="8" aria-pressed="false">8×</button></div><button id="fullscreen-button" class="text-link" type="button">全屏 ↗</button></div><p class="player-caption" id="player-caption"></p></div><aside class="demo-details"><div class="detail-tabs" role="tablist" aria-label="演示说明"><button id="detail-tab-task" role="tab" aria-selected="true" aria-controls="detail-panel" data-detail="task">任务</button><button id="detail-tab-mechanism" role="tab" aria-selected="false" aria-controls="detail-panel" data-detail="mechanism" tabindex="-1">实现</button><button id="detail-tab-record" role="tab" aria-selected="false" aria-controls="detail-panel" data-detail="record" tabindex="-1">记录</button></div><div id="detail-panel" role="tabpanel" aria-labelledby="detail-tab-task" tabindex="0"></div></aside></div><div class="dialog-footer"><button id="demo-prev" class="text-link" type="button">← 上一个</button><span id="demo-position" aria-live="polite"></span><button id="demo-next" class="text-link" type="button">下一个 →</button></div></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="noscript">请开启 JavaScript 浏览任务册；所有视频也可以从 media 文件夹直接播放。</p></noscript>
+</body>
+</html>

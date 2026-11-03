@@ -1,0 +1,10 @@
+{
+  "title": "四夹 L 形布线",
+  "seed": 0,
+  "video_duration_s": 106.85,
+  "recorded_success": true,
+  "historical_recording": false,
+  "video_sha256": "6cb2514b4e44fa8dd815ce79639ec6019b97a0c779de376a3cfd1fb769794c31",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

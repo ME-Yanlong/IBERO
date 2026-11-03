@@ -1,0 +1,10 @@
+{
+  "title": "材料去除 · 浅腔",
+  "seed": 200,
+  "video_duration_s": 85.76,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "26b4170b5bd61e3a9015dc18cea40ad2db8349d640152f90e9efebaf4ce6fdc1",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

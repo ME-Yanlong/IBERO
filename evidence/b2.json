@@ -1,0 +1,10 @@
+{
+  "title": "多夹直线布线",
+  "seed": 0,
+  "video_duration_s": 9.6,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "f0cb0e146c4f44726865e696145d33d225f56b17da4224cb96c1b0843f11afcd",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

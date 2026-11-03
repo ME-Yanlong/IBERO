@@ -1,0 +1,10 @@
+{
+  "title": "弹性卡扣解锁",
+  "seed": 0,
+  "video_duration_s": 13.88,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "19e2e6e9fc6ea2b14d6722f9149bd28b189041292512adefc521aeee43afbc3a",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

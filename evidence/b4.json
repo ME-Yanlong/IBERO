@@ -1,0 +1,10 @@
+{
+  "title": "六夹开口矩形布线",
+  "seed": 0,
+  "video_duration_s": 258.9,
+  "recorded_success": true,
+  "historical_recording": false,
+  "video_sha256": "e0e235562623dbe408b182bd70efe24889ef4d49610141aa8c429f7f99df9ac1",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}

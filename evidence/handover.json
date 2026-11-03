@@ -1,0 +1,10 @@
+{
+  "title": "线束端头交接",
+  "seed": 0,
+  "video_duration_s": 10.28,
+  "recorded_success": true,
+  "historical_recording": true,
+  "video_sha256": "30c00fa8d8e5ca844193011e01f7f714590886209a3f1eb58db7d2e183d3d424",
+  "playback_simulation_speed": 1.0,
+  "scope": "单条参考脚本轨迹的功能演示；非多种子 benchmark 成绩，材料尚未实测标定。完整实现暂未公开。"
+}
