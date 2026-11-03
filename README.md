@@ -1,3 +1,9 @@
+<!-- ibero-project-website -->
+**项目主页与演示：[IBERO 工业双臂具身操作平台](https://me-yanlong.github.io/IBERO/)**
+
+展示 Core 能力与 11 个仿真演示。完整仿真器、B3/B4 新场景与控制实现暂未公开，后续将结合论文与项目进展安排发布；本仓库既有代码为历史阶段性版本。
+<!-- /ibero-project-website -->
+
 # IBERO Core-0.1
 
 第一次了解项目，建议先读 [Core-0.1 版本介绍：架构、索引、材料与接触力控](docs/04_Core-0.1_版本介绍.md)。它按运行入口到物理实现逐层解释当前源码；开发决策与验收记录另见 [实施契约](docs/04_Core-0.1_实施契约.md)。
