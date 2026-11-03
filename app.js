@@ -113,6 +113,10 @@
     cutting: {name:'MATERIAL REMOVAL', number:'03 / 04', diagram:cuttingDiagram, title:'刀具走过之后，材料占据状态真的改变。', body:'以体素表示毛坯，用刀具扫掠区域更新剩余材料，形成孔、槽和浅腔。平均工艺力与力矩耦合回执行器，支撑结构继续参与接触。该机制用于工序级交互，飞屑是视觉效果，尚不模拟微观断裂与切屑流动。', tags:['voxel stock','tool swept volume','process force coupling','hole / slot / pocket']},
     eval: {name:'TASK SEMANTICS & AUDIT', number:'04 / 04', diagram:evalDiagram, title:'到达一个位置，不等于完成一道工序。', body:'独立 TaskSpec 从物理状态判断夹点留存、顺序、路径、端区、双手退出与稳定保持；约束与审计记录受力、弯曲和碰撞。视频附带 seed、源码指纹与结果记录，把“看到了”连接到“如何复现”。', tags:['independent TaskSpec','semantic success','force / bend / collision','traceable evidence']}
   };
+  if (publicPreview) {
+    coreContent.eval.body = '独立任务裁判从物理状态判断夹点留存、顺序、路径、端区、双手退出与稳定保持，内部记录受力、弯曲和碰撞。公开演示提供 seed、简要完成记录与视频校验值；具体评测与控制实现暂未发布。';
+    coreContent.eval.tags = ['independent task evaluation', 'semantic success', 'force / bend / collision', 'video provenance'];
+  }
   function renderCore(key) {
     const entry = coreContent[key];
     $('#core-panel').setAttribute('aria-labelledby', `core-tab-${key}`);
